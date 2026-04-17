@@ -1,8 +1,21 @@
-.vercel
+# Node
+node_modules/
+npm-debug.log
+
+# Capacitor
+/ios/Pods/
+/android/.gradle/
+/android/app/build/
+/android/build/
+/android/captures/
+/android/.idea/
+/android/local.properties
+
+# Env + editor
 .env
 .env.local
+.vercel
 .DS_Store
-node_modules/
-*.log
 .vscode/
 .idea/
+*.log

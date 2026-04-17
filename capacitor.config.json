@@ -1,0 +1,30 @@
+{
+  "appId": "com.scamvsreal.astrobonkbombs",
+  "appName": "Astro Bonk Bombs",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#0a0a1f"
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "backgroundColor": "#0a0a1f",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "androidSpinnerStyle": "large",
+      "spinnerColor": "#ff4db8"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0a0a1f",
+      "overlaysWebView": true
+    }
+  }
+}
