@@ -67,6 +67,18 @@ const ctx = cv.getContext('2d');
 const W = cv.width, H = cv.height;
 const GND = H - 150;
 
+// High-DPI (retina) support — render at device pixel ratio for crisp visuals
+(function setupDPR(){
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  if(dpr > 1){
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    cv.style.width = '100%';
+    cv.style.height = '100%';
+    ctx.scale(dpr, dpr);
+  }
+})();
+
 // ============================================================================
 //  AUDIO
 // ============================================================================
@@ -269,7 +281,7 @@ const TUTORIALS = {
   jump:       { title:'TAP TO JUMP', sub:'Tap the screen to jump. HOLD for a higher jump.', icon:'👆', color:'#ff4db8' },
   doubleJump: { title:'TRIPLE JUMP!', sub:'Tap in air for 2nd jump. Tap AGAIN for 3rd jump! Reach sparks way up high!', icon:'⚡⚡', color:'#c77dff' },
   col_smash:  { title:'SMASH ITEM', sub:'SWIPE DOWN on screen (or ↓ key) while airborne to SMASH! Destroys enemies + obstacles in a huge blast radius.', icon:'💥', color:'#ff6a40' },
-  glide:      { title:'GLIDE', sub:'Hold the tap while falling to float slowly down.', icon:'🪶', color:'#fff' },
+  glide:      { title:'GLIDE', sub:'Hold the tap while falling to float slowly down.', icon:'🪶', color:'#ffffff' },
   // Obstacles
   coal:     { title:'CRYSTAL CLUSTER', sub:'Sharp crystals on the ground. Jump OVER to pass.', icon:'💠', color:'#ff4db8' },
   firepit:  { title:'PLASMA VENT', sub:'Tall plasma geyser! Jump HIGHER — hold the tap.', icon:'🔥', color:'#ff5733' },
@@ -5449,14 +5461,17 @@ function drawCountdown(){
 }
 
 // ============================================================================
-//  MAIN LOOP
+//  MAIN LOOP — with defensive error handling so one bug can't freeze the game
 // ============================================================================
 let lastT = performance.now();
+let errCount = 0;
 function loop(now){
   const dt = Math.min(33, now-lastT);
   lastT = now;
-  update(dt);
-  render();
+  try { update(dt); }
+  catch(e){ if(errCount++<5) console.error('[update]', e); }
+  try { render(); }
+  catch(e){ if(errCount++<5) console.error('[render]', e); ctx.restore(); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
