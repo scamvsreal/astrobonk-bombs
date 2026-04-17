@@ -933,39 +933,59 @@ cv.addEventListener('pointerdown', (e)=>{
   swipeStart = { x:p.x, y:p.y };
   onTap(p.x, p.y);
 });
+// Shared handler: triggers smash or ground pound based on item + world
+function tryDownAction(){
+  if(G.state !== 'play' || B.grounded || B.pounding) return false;
+  if(G.smash > 0){
+    triggerSmash();
+    return true;
+  }
+  if(G.world >= UNLOCK.groundPound && B.y < GND - B.r - 40){
+    B.vy = 22;
+    B.pounding = true;
+    B.squashX = 0.7; B.squashY = 1.4;
+    sfx('djump');
+    spawnBurst(B.x, B.y, C.fireHi, 12);
+    // Popup so player sees feedback that swipe worked
+    popup(B.x, B.y-40, 'POUND!', C.fireHi, 1.2);
+    for(let k=0;k<6;k++){
+      G.particles.push({
+        x: B.x+rand(-10,10), y: B.y,
+        vx: rand(-1,1), vy: rand(-2, 0),
+        life: 1, max: 22,
+        color: k%2 ? C.fireHi : C.fire,
+        size: rand(3,5), g: 0.02, shape:'circle',
+      });
+    }
+    return true;
+  }
+  return false;
+}
+
 cv.addEventListener('pointermove', (e)=>{
   if(!swipeStart) return;
   const p = canvasCoords(e);
   const dy = p.y - swipeStart.y;
   const dx = Math.abs(p.x - swipeStart.x);
-  // Down swipe (>70px, <90px drift) triggers:
-  //   - SMASH if player has smash item (priority, bigger AOE)
-  //   - GROUND POUND in W3+ otherwise (free, unlimited)
-  if(dy > 70 && dx < 90 && G.state==='play' && !B.grounded && !B.pounding){
-    if(G.smash > 0){
-      triggerSmash();
-      swipeStart = null;
-    } else if(G.world >= UNLOCK.groundPound && B.y < GND - B.r - 40){
-      // Ground pound via swipe (was: 4th tap — caused accidental pounds)
-      B.vy = 22;
-      B.pounding = true;
-      B.squashX = 0.7; B.squashY = 1.4;
-      sfx('djump');
-      spawnBurst(B.x, B.y, C.fireHi, 12);
-      for(let k=0;k<6;k++){
-        G.particles.push({
-          x: B.x+rand(-10,10), y: B.y,
-          vx: rand(-1,1), vy: rand(-2, 0),
-          life: 1, max: 22,
-          color: k%2 ? C.fireHi : C.fire,
-          size: rand(3,5), g: 0.02, shape:'circle',
-        });
-      }
-      swipeStart = null;
-    }
+  // More forgiving thresholds: 45px down (was 70), 110px drift (was 90)
+  if(dy > 45 && dx < 110){
+    if(tryDownAction()) swipeStart = null;
   }
 });
-cv.addEventListener('pointerup',   (e)=>{ e.preventDefault(); swipeStart = null; onRelease(); });
+cv.addEventListener('pointerup', (e)=>{
+  e.preventDefault();
+  // Also detect quick flick-down on pointerup (for very fast/short swipes)
+  if(swipeStart){
+    const p = canvasCoords(e);
+    const dy = p.y - swipeStart.y;
+    const dx = Math.abs(p.x - swipeStart.x);
+    if(dy > 35 && dx < 120){
+      tryDownAction();
+    }
+  }
+  swipeStart = null;
+  onRelease();
+});
 cv.addEventListener('pointercancel', ()=>{ swipeStart = null; onRelease(); });
 window.addEventListener('keydown', (e)=>{
   if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); onTap(W/2, H-200); }
