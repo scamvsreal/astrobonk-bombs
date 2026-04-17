@@ -817,9 +817,15 @@ function roundRect(x,y,w,h,r){
   ctx.arcTo(x,y,x+w,y,r);
   ctx.closePath();
 }
+// Global particle cap — prevents runaway growth during long boss phases / chains
+const PARTICLE_CAP = 500;
 function spawnBurst(x,y,color,n){
+  // Drop count when near cap
+  if(G.particles.length >= PARTICLE_CAP) return;
+  const headroom = PARTICLE_CAP - G.particles.length;
   // -20% spark count (rounded down, min 1)
-  const actualN = Math.max(1, Math.floor(n * 0.8));
+  let actualN = Math.max(1, Math.floor(n * 0.8));
+  if(actualN > headroom) actualN = headroom;
   for(let i=0;i<actualN;i++){
     G.particles.push({
       x,y, vx: rand(-4,4), vy: rand(-6,-1),
@@ -960,7 +966,7 @@ function spawnRunSparkle(x,y){
 //         ice crystals (W2 accent), void whispers (W5), glow motes (W8)
 // ============================================================================
 function spawnAmbient(){
-  if(G.ambient.length > 60) return; // cap for perf
+  if(G.ambient.length > 45) return; // cap for perf (was 60)
   const w = G.world || 1;
   const cw = currentWorld();
   // Stardust — universal subtle floaters (all worlds)
@@ -6179,7 +6185,7 @@ function drawWorldParallax(){
 
   // W1 — COSMIC — distant nebulae planets of various sizes
   if(wIdx===1){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       // big planet silhouettes with glow
       for(const p of [{x:W*0.2, y:H*0.48, r:38, c:'#3a1870'}, {x:W*0.55, y:H*0.40, r:26, c:'#6a2aa0'}, {x:W*0.85, y:H*0.50, r:32, c:'#2a1260'}]){
@@ -6205,7 +6211,7 @@ function drawWorldParallax(){
   else if(wIdx===2){
     const spireCol1 = 'rgba(140,200,240,0.75)';
     const spireCol2 = 'rgba(80,140,200,0.85)';
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const spires = [
         {x:30, h:180, w:60}, {x:110, h:230, w:70}, {x:210, h:200, w:55},
@@ -6237,7 +6243,7 @@ function drawWorldParallax(){
   }
   // W3 — VOLCANIC PEAKS with glowing lava at base
   else if(wIdx===3){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const peaks = [
         {x:20, h:210, w:140}, {x:170, h:260, w:160}, {x:340, h:190, w:130}, {x:470, h:240, w:150},
@@ -6270,7 +6276,7 @@ function drawWorldParallax(){
   }
   // W4 — GIANT MUSHROOM TREES
   else if(wIdx===4){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const shrooms = [
         {x:50, cap:44, stem:110}, {x:180, cap:60, stem:140}, {x:310, cap:50, stem:120}, {x:430, cap:70, stem:160},
@@ -6299,7 +6305,7 @@ function drawWorldParallax(){
   }
   // W5 — VOID MONOLITHS (black obelisks with faint glow)
   else if(wIdx===5){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const obe = [{x:80,h:260,w:30},{x:220,h:200,w:24},{x:340,h:280,w:36},{x:470,h:220,w:28}];
       for(const o of obe){
@@ -6329,7 +6335,7 @@ function drawWorldParallax(){
   }
   // W6 — SOLAR RUINS (broken stone arches with lava seam)
   else if(wIdx===6){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const arches = [{x:60, h:180, w:90}, {x:220, h:220, w:110}, {x:380, h:160, w:80}];
       for(const a of arches){
@@ -6361,7 +6367,7 @@ function drawWorldParallax(){
   }
   // W7 — CYBER TOWERS with LED arrays
   else if(wIdx===7){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const towers = [
         {x:30, h:280, w:50}, {x:110, h:350, w:40}, {x:180, h:260, w:60},
@@ -6419,7 +6425,7 @@ function drawWorldParallax(){
   }
   // W8 — KELP FOREST / CORAL SILHOUETTES
   else if(wIdx===8){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       for(let k=0; k<6; k++){
         const sx = xo + 20 + k*90;
@@ -6443,7 +6449,7 @@ function drawWorldParallax(){
   }
   // W9 — RUBY CRYSTAL CLUSTERS
   else if(wIdx===9){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const clusters = [{x:60,h:180,w:60},{x:200,h:240,w:80},{x:350,h:200,w:70},{x:460,h:220,w:75}];
       for(const c of clusters){
@@ -6474,7 +6480,7 @@ function drawWorldParallax(){
   }
   // W10 — GOLDEN PALACE PEAKS (ornate silhouettes)
   else if(wIdx===10){
-    for(let i=-1; i<=1; i++){
+    for(let i=0; i<=1; i++){
       const xo = i*W - ox;
       const palaces = [{x:30,h:220,w:120},{x:180,h:280,w:150},{x:360,h:240,w:130}];
       for(const p of palaces){
@@ -7291,37 +7297,49 @@ function drawForegroundDebris(){
   }
 }
 function drawParticles(){
+  // Use a single save/restore block outside the loop and minimize state changes
+  ctx.save();
+  let currentMode = 'source-over';
   for(const p of G.particles){
-    ctx.save();
-    // -30% global alpha on particle glow
-    ctx.globalAlpha = Math.max(0, p.life) * 0.7;
+    const life = Math.max(0, p.life);
     if(p.shape==='rect'){
+      if(currentMode !== 'source-over'){
+        ctx.globalCompositeOperation = 'source-over';
+        currentMode = 'source-over';
+      }
+      ctx.globalAlpha = life * 0.7;
+      ctx.save();
       ctx.translate(p.x,p.y); ctx.rotate(p.rot||0);
       ctx.fillStyle = p.color;
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 3.5;  // reduced from 5
+      ctx.shadowBlur = 3.5;
       ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
+      ctx.restore();
     } else {
-      // Additive glow halo around each circle particle (reduced 30%)
-      ctx.globalCompositeOperation = 'lighter';
-      const r = p.size * p.life;
-      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*1.4);  // reduced from r*2
-      grad.addColorStop(0, p.color);
-      grad.addColorStop(0.4, p.color);
-      grad.addColorStop(1, p.color.replace(/rgba?\(([^)]+)\)/, (m,inner)=>{
-        const parts = inner.split(',').map(s=>s.trim());
-        return 'rgba('+parts[0]+','+parts[1]+','+parts[2]+',0)';
-      }).replace(/^#[0-9a-f]{6,8}$/i, p.color+'00'));
-      ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.25, 0, Math.PI*2); ctx.fill();  // reduced from r*1.8
-      // Hot core (unchanged)
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = Math.max(0, p.life);  // core stays full alpha
+      // Cheap 2-pass circle glow: faded additive outer + bright core.
+      // Avoids createRadialGradient + regex per particle (was expensive at 60fps).
+      if(currentMode !== 'lighter'){
+        ctx.globalCompositeOperation = 'lighter';
+        currentMode = 'lighter';
+      }
+      ctx.shadowBlur = 0;
+      const r = p.size * life;
+      // Outer glow (semi-transparent)
+      ctx.globalAlpha = life * 0.3;
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.9, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.6, 0, Math.PI*2); ctx.fill();
+      // Mid glow
+      ctx.globalAlpha = life * 0.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.0, 0, Math.PI*2); ctx.fill();
+      // Hot core (brightest)
+      ctx.globalAlpha = life;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.55, 0, Math.PI*2); ctx.fill();
     }
-    ctx.restore();
   }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
+  ctx.restore();
   // Fuse embers — additive bright with soft glow
   for(const e of G.embers){
     ctx.save();
@@ -7381,19 +7399,19 @@ function drawBossWave(){
     ctx.fillStyle = wallG;
     ctx.fillRect(wx-280, 0, 280, H);
 
-    // 3. PROCEDURAL FLAME TONGUES — 3-octave noise-driven flame edge
+    // 3. PROCEDURAL FLAME TONGUES — 3-layer noise-driven (step 16 for perf)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
+    const FLAME_STEP = 16;
     // Layer 1 — giant base flames
     ctx.fillStyle = 'rgba(255,80,20,0.7)';
     ctx.beginPath();
     ctx.moveTo(wx+80, 0);
-    for(let y=0; y<=H; y+=8){
+    for(let y=0; y<=H; y+=FLAME_STEP){
       const phase = G.t*0.012 + y*0.03;
       const n1 = Math.sin(phase)*24;
       const n2 = Math.sin(phase*1.7 + y*0.015)*14;
-      const n3 = Math.cos(phase*2.5 + y*0.009)*10;
-      ctx.lineTo(wx + n1 + n2 + n3, y);
+      ctx.lineTo(wx + n1 + n2, y);
     }
     ctx.lineTo(wx+80, H);
     ctx.closePath();
@@ -7402,11 +7420,10 @@ function drawBossWave(){
     ctx.fillStyle = 'rgba(255,180,60,0.7)';
     ctx.beginPath();
     ctx.moveTo(wx+50, 0);
-    for(let y=0; y<=H; y+=8){
+    for(let y=0; y<=H; y+=FLAME_STEP){
       const phase = G.t*0.016 - y*0.04;
       const n1 = Math.sin(phase)*18;
-      const n2 = Math.cos(phase*2.1 + y*0.02)*10;
-      ctx.lineTo(wx-22 + n1 + n2, y);
+      ctx.lineTo(wx-22 + n1, y);
     }
     ctx.lineTo(wx+50, H);
     ctx.closePath();
@@ -7415,7 +7432,7 @@ function drawBossWave(){
     ctx.fillStyle = 'rgba(255,240,180,0.75)';
     ctx.beginPath();
     ctx.moveTo(wx+20, 0);
-    for(let y=0; y<=H; y+=8){
+    for(let y=0; y<=H; y+=FLAME_STEP){
       const phase = G.t*0.02 + y*0.05;
       const n1 = Math.sin(phase)*10;
       ctx.lineTo(wx-45 + n1, y);
@@ -7489,9 +7506,9 @@ function drawBossWave(){
     }
     ctx.restore();
 
-    // 5. Heavy embers streaming from wave (more than before)
-    if(G.frame%1===0){
-      for(let i=0;i<5;i++){
+    // 5. Heavy embers streaming from wave — capped to avoid runaway particles
+    if(G.frame%2===0 && G.particles.length < PARTICLE_CAP - 10){
+      for(let i=0;i<3;i++){
         G.particles.push({
           x: wx+rand(-30,20), y: rand(0,H),
           vx: rand(1.5,5), vy: rand(-4,0),
