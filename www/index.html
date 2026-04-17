@@ -3,10 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
-<title>ASTRO BONK BOMBS — Game Preview</title>
+<title>ASTRO BONK BOMBS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{width:100%;height:100%;overflow:hidden;font-family:'Segoe UI',-apple-system,Roboto,Arial,sans-serif;color:#fff;user-select:none;touch-action:manipulation}
+  html,body{width:100%;height:100%;overflow:hidden;font-family:'Chakra Petch','Chakra Petch',-apple-system,Roboto,Arial,sans-serif;color:#fff;user-select:none;touch-action:manipulation}
   body{
     background:
       radial-gradient(ellipse at 20% 10%, #3a1856 0%, transparent 50%),
@@ -68,16 +71,43 @@ const W = cv.width, H = cv.height;
 const GND = H - 150;
 
 // High-DPI (retina) support — render at device pixel ratio for crisp visuals
+const DPR = Math.min(3, window.devicePixelRatio || 1);
 (function setupDPR(){
-  const dpr = Math.min(3, window.devicePixelRatio || 1);
-  if(dpr > 1){
-    cv.width = W * dpr;
-    cv.height = H * dpr;
+  if(DPR > 1){
+    cv.width = W * DPR;
+    cv.height = H * DPR;
     cv.style.width = '100%';
     cv.style.height = '100%';
-    ctx.scale(dpr, dpr);
+    ctx.scale(DPR, DPR);
   }
 })();
+
+// Bloom post-processing via offscreen canvas — adds glow to bright elements
+const bloomCanvas = document.createElement('canvas');
+bloomCanvas.width = Math.floor(W * 0.5);
+bloomCanvas.height = Math.floor(H * 0.5);
+const bloomCtx = bloomCanvas.getContext('2d');
+let BLOOM_ENABLED = true;
+function applyBloom(){
+  if(!BLOOM_ENABLED) return;
+  try {
+    // Downscale current canvas
+    bloomCtx.globalCompositeOperation = 'source-over';
+    bloomCtx.clearRect(0, 0, bloomCanvas.width, bloomCanvas.height);
+    bloomCtx.drawImage(cv, 0, 0, cv.width, cv.height, 0, 0, bloomCanvas.width, bloomCanvas.height);
+    // Composite back with blur + lighter = bloom glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.38;
+    ctx.filter = 'blur(10px) brightness(1.2)';
+    ctx.drawImage(bloomCanvas, 0, 0, W, H);
+    ctx.filter = 'none';
+    ctx.restore();
+  } catch(e){
+    BLOOM_ENABLED = false;
+    console.warn('Bloom disabled:', e.message);
+  }
+}
 
 // ============================================================================
 //  AUDIO
@@ -90,28 +120,122 @@ function beep(freq,dur,type='sine',vol=0.15,slide=0){
   o.type=type;o.frequency.setValueAtTime(freq,a.currentTime);
   if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(20,freq+slide),a.currentTime+dur);
   o.connect(g);g.connect(a.destination);
-  g.gain.setValueAtTime(vol,a.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+dur);
+  // ADSR envelope (quick attack, exponential decay) — avoids click pop
+  g.gain.setValueAtTime(0, a.currentTime);
+  g.gain.linearRampToValueAtTime(vol, a.currentTime+0.008);
+  g.gain.exponentialRampToValueAtTime(0.0005, a.currentTime+dur);
   o.start();o.stop(a.currentTime+dur);
+}
+// Rich sound: multi-oscillator with filter sweep (for fever, power-ups, world up)
+function richTone(freq, dur, opts){
+  const a=ac();if(!a)return;
+  opts = opts || {};
+  const g = a.createGain();
+  const filter = a.createBiquadFilter();
+  filter.type = opts.filterType || 'lowpass';
+  filter.frequency.setValueAtTime(opts.filterStart || 800, a.currentTime);
+  filter.frequency.exponentialRampToValueAtTime(opts.filterEnd || 3000, a.currentTime+dur*0.6);
+  filter.Q.value = opts.q || 5;
+  // Dual oscillators for richness — fundamental + octave
+  const o1 = a.createOscillator();
+  const o2 = a.createOscillator();
+  o1.type = opts.type || 'sawtooth';
+  o2.type = opts.type2 || 'square';
+  o1.frequency.setValueAtTime(freq, a.currentTime);
+  o2.frequency.setValueAtTime(freq*(opts.octave||2), a.currentTime);
+  if(opts.slide){
+    o1.frequency.exponentialRampToValueAtTime(Math.max(20,freq+opts.slide), a.currentTime+dur);
+    o2.frequency.exponentialRampToValueAtTime(Math.max(20,(freq+opts.slide)*(opts.octave||2)), a.currentTime+dur);
+  }
+  const gainMix = a.createGain();
+  gainMix.gain.value = opts.mix || 0.5;
+  o1.connect(filter); o2.connect(gainMix); gainMix.connect(filter);
+  filter.connect(g); g.connect(a.destination);
+  g.gain.setValueAtTime(0, a.currentTime);
+  g.gain.linearRampToValueAtTime(opts.vol||0.18, a.currentTime+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0005, a.currentTime+dur);
+  o1.start(); o2.start();
+  o1.stop(a.currentTime+dur); o2.stop(a.currentTime+dur);
+}
+// Noise burst (for explosions, damage, shatter)
+function noise(dur, vol, filterFreq, slide){
+  const a=ac();if(!a)return;
+  const bufSize = Math.floor(a.sampleRate * dur);
+  const buf = a.createBuffer(1, bufSize, a.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<bufSize;i++) data[i] = (Math.random()*2-1) * (1 - i/bufSize);
+  const src = a.createBufferSource();
+  src.buffer = buf;
+  const filter = a.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(filterFreq||800, a.currentTime);
+  if(slide) filter.frequency.exponentialRampToValueAtTime(Math.max(50,filterFreq+slide), a.currentTime+dur);
+  const g = a.createGain();
+  g.gain.setValueAtTime(vol||0.2, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0005, a.currentTime+dur);
+  src.connect(filter); filter.connect(g); g.connect(a.destination);
+  src.start();
 }
 function sfx(n){
   // Trigger native haptics when running on device
   try { if(window.nativeHaptic && window.nativeHaptic[n]) window.nativeHaptic[n](); } catch(e){}
   try{
-    if(n==='jump'){beep(340,0.12,'square',0.12,300);}
-    else if(n==='djump'){beep(540,0.1,'square',0.12,400);}
-    else if(n==='coin'){beep(880,0.06,'square',0.14);setTimeout(()=>beep(1320,0.08,'square',0.12),45);}
-    else if(n==='gem'){beep(1200,0.1,'triangle',0.15);setTimeout(()=>beep(1600,0.12,'triangle',0.12),60);setTimeout(()=>beep(2000,0.15,'triangle',0.1),130);}
-    else if(n==='water'){beep(520,0.18,'sine',0.15,-200);}
-    else if(n==='ice'){beep(700,0.15,'triangle',0.15,400);}
-    else if(n==='hit'){beep(110,0.3,'sawtooth',0.3,-50);}
-    else if(n==='stomp'){beep(220,0.1,'square',0.2);setTimeout(()=>beep(440,0.1,'square',0.15),60);}
-    else if(n==='boom'){beep(70,0.5,'sawtooth',0.35);setTimeout(()=>beep(40,0.4,'sawtooth',0.25),80);}
-    else if(n==='ui'){beep(660,0.06,'square',0.1);}
-    else if(n==='power'){beep(440,0.1,'square',0.15);setTimeout(()=>beep(660,0.1,'square',0.15),80);setTimeout(()=>beep(880,0.15,'square',0.15),160);}
-    else if(n==='combo'){beep(800+Math.random()*400,0.08,'square',0.13);}
-    else if(n==='warn'){beep(200,0.15,'sawtooth',0.2);setTimeout(()=>beep(180,0.15,'sawtooth',0.2),180);}
-    else if(n==='wave'){beep(180,0.4,'sawtooth',0.25,-100);}
+    if(n==='jump'){
+      richTone(300, 0.14, {type:'sawtooth', type2:'sine', octave:2, mix:0.4, vol:0.14, slide:250, filterStart:600, filterEnd:2200, q:6});
+    }
+    else if(n==='djump'){
+      richTone(500, 0.12, {type:'sawtooth', type2:'square', octave:2, mix:0.5, vol:0.13, slide:400, filterStart:900, filterEnd:3400, q:8});
+    }
+    else if(n==='coin'){
+      beep(1100, 0.06, 'triangle', 0.14);
+      setTimeout(()=>beep(1650, 0.08, 'triangle', 0.12), 45);
+    }
+    else if(n==='gem'){
+      richTone(1100, 0.1, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.15, filterStart:1500, filterEnd:3800});
+      setTimeout(()=>richTone(1650, 0.12, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.13, filterStart:2000, filterEnd:4500}), 55);
+      setTimeout(()=>richTone(2200, 0.15, {type:'sine', type2:'triangle', octave:2, mix:0.4, vol:0.1, filterStart:2500, filterEnd:5000}), 120);
+    }
+    else if(n==='water'){
+      richTone(480, 0.22, {type:'sine', type2:'sine', octave:2.5, mix:0.3, vol:0.16, slide:-220, filterStart:800, filterEnd:400, q:4});
+    }
+    else if(n==='ice'){
+      richTone(720, 0.16, {type:'triangle', type2:'square', octave:1.5, mix:0.25, vol:0.15, slide:350, filterStart:1200, filterEnd:3200, q:7});
+      setTimeout(()=>beep(1400, 0.1, 'sine', 0.08), 40);
+    }
+    else if(n==='hit'){
+      noise(0.25, 0.28, 1000, -600);
+      beep(120, 0.2, 'sawtooth', 0.22, -50);
+    }
+    else if(n==='stomp'){
+      noise(0.06, 0.18, 2500, -1500);
+      beep(210, 0.08, 'square', 0.2);
+      setTimeout(()=>beep(420, 0.1, 'square', 0.15), 45);
+    }
+    else if(n==='boom'){
+      noise(0.5, 0.35, 600, -400);
+      beep(65, 0.5, 'sawtooth', 0.3);
+      setTimeout(()=>beep(38, 0.4, 'sawtooth', 0.24), 80);
+    }
+    else if(n==='ui'){
+      beep(720, 0.05, 'triangle', 0.1);
+      setTimeout(()=>beep(1050, 0.04, 'sine', 0.08), 25);
+    }
+    else if(n==='power'){
+      richTone(440, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:600, filterEnd:3000, q:8});
+      setTimeout(()=>richTone(660, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:900, filterEnd:4000, q:8}), 80);
+      setTimeout(()=>richTone(880, 0.15, {type:'triangle', type2:'square', mix:0.4, vol:0.15, filterStart:1400, filterEnd:5200, q:8}), 160);
+    }
+    else if(n==='combo'){
+      beep(800+Math.random()*500, 0.08, 'triangle', 0.13);
+    }
+    else if(n==='warn'){
+      richTone(200, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3});
+      setTimeout(()=>richTone(180, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3}), 180);
+    }
+    else if(n==='wave'){
+      noise(0.6, 0.22, 400, -200);
+      beep(160, 0.4, 'sawtooth', 0.22, -80);
+    }
   }catch(e){}
 }
 
@@ -3508,7 +3632,7 @@ function drawCollectible(c){
     // Floating "GIFT!" label above
     ctx.save();
     ctx.fillStyle = `hsl(${hue},100%,70%)`;
-    ctx.font = 'bold 11px Segoe UI';
+    ctx.font = 'bold 11px Chakra Petch';
     ctx.textAlign = 'center';
     ctx.globalAlpha = 0.8 + Math.sin(G.t*0.01)*0.2;
     ctx.fillText('🎁 GIFT', 0, -c.r-10);
@@ -3946,7 +4070,7 @@ function drawTutorialModal(){
   ctx.fillStyle = m.color;
   roundRect(cx+16, cy+12, 54, 20, 10); ctx.fill();
   ctx.fillStyle = '#0a0a1f';
-  ctx.font = '900 11px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = '900 11px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('NEW!', cx+43, cy+22);
 
   // Icon (large emoji)
@@ -3968,13 +4092,13 @@ function drawTutorialModal(){
 
   // Title
   ctx.fillStyle = '#fff';
-  ctx.font = '900 24px Segoe UI';
+  ctx.font = '900 24px Chakra Petch';
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.fillText(m.title, W/2, cy+172);
 
   // Subtitle — word wrap
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  ctx.font = '15px Segoe UI';
+  ctx.font = '15px Chakra Petch';
   const words = m.sub.split(' ');
   const maxW = cw - 50;
   let line = '';
@@ -3994,7 +4118,7 @@ function drawTutorialModal(){
   // Tap to continue pulse
   const pulse = 0.55 + Math.sin(G.t*0.006)*0.35;
   ctx.fillStyle = `rgba(255,255,255,${pulse*fade})`;
-  ctx.font = 'bold 13px Segoe UI';
+  ctx.font = 'bold 13px Chakra Petch';
   ctx.fillText('👆  TAP TO CONTINUE', W/2, cy+ch-26);
 
   ctx.restore();
@@ -4064,17 +4188,43 @@ function drawParticles(){
     if(p.shape==='rect'){
       ctx.translate(p.x,p.y); ctx.rotate(p.rot||0);
       ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 5;
       ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
     } else {
+      // Additive glow halo around each circle particle
+      ctx.globalCompositeOperation = 'lighter';
+      const r = p.size * p.life;
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*2);
+      grad.addColorStop(0, p.color);
+      grad.addColorStop(0.4, p.color);
+      grad.addColorStop(1, p.color.replace(/rgba?\(([^)]+)\)/, (m,inner)=>{
+        const parts = inner.split(',').map(s=>s.trim());
+        return 'rgba('+parts[0]+','+parts[1]+','+parts[2]+',0)';
+      }).replace(/^#[0-9a-f]{6,8}$/i, p.color+'00'));
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.8, 0, Math.PI*2); ctx.fill();
+      // Hot core
+      ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.9, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
   }
+  // Fuse embers — additive bright with soft glow
   for(const e of G.embers){
-    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha = e.life;
-    ctx.fillStyle = C.sparkHot;
-    ctx.beginPath(); ctx.arc(e.x, e.y, e.size*e.life, 0, Math.PI*2); ctx.fill();
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha = e.life;
+    const r = e.size*e.life;
+    const gg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r*3);
+    gg.addColorStop(0, C.sparkHot);
+    gg.addColorStop(0.5, 'rgba(255,140,60,0.5)');
+    gg.addColorStop(1, 'rgba(255,100,40,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(e.x, e.y, r*2.5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(e.x, e.y, r*0.6, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
 }
@@ -4083,7 +4233,7 @@ function drawPopups(){
   for(const p of G.popups){
     ctx.save();
     ctx.globalAlpha = Math.max(0, p.life);
-    ctx.font = `bold ${Math.floor(22*p.scale)}px Segoe UI, Arial`;
+    ctx.font = `bold ${Math.floor(22*p.scale)}px Russo One, sans-serif`;
     ctx.textAlign='center';
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillText(p.text, p.x+2, p.y+2);
@@ -4139,10 +4289,10 @@ function drawBossWave(){
     ctx.fillStyle = blink ? 'rgba(255,30,30,0.25)' : 'rgba(255,30,30,0)';
     ctx.fillRect(0,0,W,H);
     ctx.textAlign='center';
-    ctx.font='900 38px Segoe UI';
+    ctx.font='900 38px Chakra Petch';
     ctx.fillStyle = blink ? '#ff4060' : '#ffeadd';
     ctx.fillText('⚠ FIRE WAVE INCOMING ⚠', W/2, H*0.35);
-    ctx.font='bold 15px Segoe UI';
+    ctx.font='bold 15px Chakra Petch';
     ctx.fillStyle = '#fff';
     ctx.fillText('Dodge obstacles to stay ahead!', W/2, H*0.35+26);
     ctx.restore();
@@ -4154,10 +4304,10 @@ function drawBossWave(){
 // ============================================================================
 function drawHUD(){
   ctx.save();
-  ctx.font = 'bold 30px Segoe UI'; ctx.textAlign='left';
+  ctx.font = 'bold 30px Chakra Petch'; ctx.textAlign='left';
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillText(Math.floor(G.distance)+'m', 28, 70);
   ctx.fillStyle = '#fff'; ctx.fillText(Math.floor(G.distance)+'m', 26, 68);
-  ctx.font = 'bold 14px Segoe UI'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = 'bold 14px Chakra Petch'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillText('DISTANCE', 26, 88);
 
   const px = W-28, pillW = 110, pillH = 34;
@@ -4166,7 +4316,7 @@ function drawHUD(){
   roundRect(px-pillW, 44, pillW, pillH, 17); ctx.fill();
   ctx.fillStyle = C.coin;
   ctx.beginPath(); ctx.arc(px-pillW+18, 61, 10, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 17px Segoe UI'; ctx.textAlign='right';
+  ctx.fillStyle='#fff'; ctx.font='bold 17px Chakra Petch'; ctx.textAlign='right';
   ctx.fillText(G.runCoins, px-14, 66);
   // Milestone progress mini-bar under coin pill
   const nextMile = G.coinMilestone + 20;
@@ -4177,7 +4327,7 @@ function drawHUD(){
   ctx.fillStyle = C.coinHi;
   roundRect(mbx, mby, mbw*prog, mbh, 1.5); ctx.fill();
   ctx.fillStyle='rgba(255,213,74,0.75)';
-  ctx.font='bold 9px Segoe UI'; ctx.textAlign='right';
+  ctx.font='bold 9px Chakra Petch'; ctx.textAlign='right';
   ctx.fillText((nextMile - G.runCoins)+' → +FUSE', px-14, 92);
   // gems (shifted down to leave room for milestone bar)
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -4187,7 +4337,7 @@ function drawHUD(){
   ctx.moveTo(px-pillW+18, 111); ctx.lineTo(px-pillW+28, 119);
   ctx.lineTo(px-pillW+18, 128); ctx.lineTo(px-pillW+8, 119);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 17px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font='bold 17px Chakra Petch';
   ctx.fillText(G.runGems, px-14, 124);
   ctx.restore();
 
@@ -4198,7 +4348,7 @@ function drawHUD(){
   // combo
   if(G.combo >= 2){
     ctx.save();
-    ctx.font = 'bold 28px Segoe UI'; ctx.textAlign='center';
+    ctx.font = 'bold 28px Chakra Petch'; ctx.textAlign='center';
     const alpha = Math.min(1, G.comboTime/1400);
     ctx.fillStyle = `rgba(0,0,0,${alpha*0.6})`;
     ctx.fillText('COMBO x'+G.combo, W/2+2, 230+2);
@@ -4224,9 +4374,9 @@ function drawHUD(){
     ctx.strokeStyle=color; ctx.lineWidth=3;
     roundRect(W-w-20, py, w, h, 14); ctx.stroke();
     ctx.fillStyle=color;
-    ctx.font='bold 22px Segoe UI'; ctx.textAlign='center';
+    ctx.font='bold 22px Chakra Petch'; ctx.textAlign='center';
     ctx.fillText(label, W-w/2-20, py+36);
-    ctx.font='bold 13px Segoe UI'; ctx.fillStyle='#fff';
+    ctx.font='bold 13px Chakra Petch'; ctx.fillStyle='#fff';
     const txt = isCharges ? ('x'+Math.floor(timeLeft)) : (timeLeft.toFixed(1)+'s');
     ctx.fillText(txt, W-w/2-20, py+58);
     ctx.restore();
@@ -4248,7 +4398,7 @@ function drawHUD(){
     ctx.fillStyle=C.fire;
     const fillN = G.bossTimer/12000;
     roundRect(bx,by,bw*fillN,bh,9); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.font='bold 11px Segoe UI'; ctx.textAlign='center';
+    ctx.fillStyle='#fff'; ctx.font='bold 11px Chakra Petch'; ctx.textAlign='center';
     ctx.fillText('FIRE WAVE — DODGE & SURVIVE!', W/2, by+13);
     ctx.restore();
   }
@@ -4260,9 +4410,9 @@ function drawHUD(){
     ctx.globalAlpha = a;
     ctx.fillStyle='rgba(0,0,0,0.5)';
     roundRect(W/2-140, H-220, 280, 54, 18); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.font='bold 15px Segoe UI'; ctx.textAlign='center';
+    ctx.fillStyle='#fff'; ctx.font='bold 15px Chakra Petch'; ctx.textAlign='center';
     ctx.fillText('TAP TO JUMP  •  HOLD FOR HIGHER', W/2, H-198);
-    ctx.font='12px Segoe UI'; ctx.fillStyle='rgba(255,255,255,0.75)';
+    ctx.font='12px Chakra Petch'; ctx.fillStyle='rgba(255,255,255,0.75)';
     ctx.fillText('Tap again in air = double jump • BONK enemies for coins', W/2, H-180);
     ctx.restore();
   }
@@ -4293,12 +4443,12 @@ function drawWorldBar(){
   ctx.fillStyle = cw.horizon;
   ctx.beginPath(); ctx.arc(px+14, py+pillH/2, 10, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#0a0a1f';
-  ctx.font='bold 13px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 13px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(G.world, px+14, py+pillH/2+1);
   // emoji + name
   ctx.textAlign='center';
   ctx.fillStyle = cw.accent;
-  ctx.font='bold 12px Segoe UI';
+  ctx.font='bold 12px Chakra Petch';
   ctx.fillText(cw.emoji+'  '+cw.name.toUpperCase(), W/2+8, py+pillH/2+1);
   // Progress bar under pill (fills as distance into current world)
   const barW = pillW-4, barH = 4;
@@ -4333,7 +4483,7 @@ function drawFeverBar(){
     roundRect(x,y,w*pct,h,5); ctx.fill();
     ctx.globalAlpha = 1;
     // label
-    ctx.fillStyle='#ffe0a0'; ctx.font='bold 11px Segoe UI'; ctx.textAlign='left';
+    ctx.fillStyle='#ffe0a0'; ctx.font='bold 11px Chakra Petch'; ctx.textAlign='left';
     ctx.fillText('🔥 FEVER!', 26, y+h-1);
     ctx.textAlign='right';
     ctx.fillText(G.feverTimer.toFixed(0)+'ms', x+w+60, y+h-1);
@@ -4344,7 +4494,7 @@ function drawFeverBar(){
     fg.addColorStop(1, '#ffe070');
     ctx.fillStyle = fg;
     roundRect(x,y,w*(G.fever/100),h,5); ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.font='bold 10px Segoe UI'; ctx.textAlign='left';
+    ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.font='bold 10px Chakra Petch'; ctx.textAlign='left';
     ctx.fillText('FEVER', 26, y+h-1);
     ctx.textAlign='right';
     ctx.fillText(Math.floor(G.fever)+'%', x+w+60, y+h-1);
@@ -4406,7 +4556,7 @@ function drawFuseBar(){
     roundRect(x-4, y-4, w+8, h+8, 12); ctx.stroke();
     ctx.restore();
   }
-  ctx.fillStyle='#fff'; ctx.font='bold 12px Segoe UI'; ctx.textAlign='left';
+  ctx.fillStyle='#fff'; ctx.font='bold 12px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('FUSE', 26, y+h-2);
   ctx.textAlign='right';
   ctx.fillText(Math.max(0,Math.floor(G.fuse))+'%', x+w+60, y+h-2);
@@ -4432,7 +4582,7 @@ function drawMenu(){
   ctx.textAlign='center';
 
   // "ASTRO" — small, cyan, tracked out
-  ctx.font = '800 24px Segoe UI, Arial';
+  ctx.font = '800 24px Russo One, sans-serif';
   ctx.fillStyle = 'rgba(77,208,255,0.35)';
   ctx.fillText('A  S  T  R  O', W/2+1, titleY+1);
   ctx.shadowColor = C.water; ctx.shadowBlur = 14;
@@ -4442,7 +4592,7 @@ function drawMenu(){
 
   // "BONK" — impact logo (20% smaller)
   const bonkY = titleY + 66;
-  ctx.font = '900 74px Segoe UI, Arial';
+  ctx.font = '900 74px Russo One, sans-serif';
   // back glow burst
   ctx.save();
   ctx.globalCompositeOperation='lighter';
@@ -4480,7 +4630,7 @@ function drawMenu(){
 
   // "BOMBS"
   const bombsY = bonkY + 46;
-  ctx.font = '900 42px Segoe UI, Arial';
+  ctx.font = '900 42px Russo One, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.fillText('BOMBS', W/2+2, bombsY+2);
   const g2 = ctx.createLinearGradient(0, bombsY-38, 0, bombsY+8);
@@ -4499,7 +4649,7 @@ function drawMenu(){
   ctx.shadowBlur = 0;
 
   // Tagline
-  ctx.font = 'bold 11px Segoe UI';
+  ctx.font = 'bold 11px Chakra Petch';
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.fillText('★  STOMP  •  DODGE  •  SURVIVE  ★', W/2, bombsY+36);
 
@@ -4589,7 +4739,7 @@ function drawMenu(){
   roundRect(-btnW/2, -btnH/2, btnW, btnH, 37); ctx.stroke();
   // text with drop shadow
   ctx.fillStyle='#fff';
-  ctx.font='900 30px Segoe UI, Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='900 30px Russo One, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.shadowColor = 'rgba(80,0,50,0.6)'; ctx.shadowBlur = 2; ctx.shadowOffsetY = 2;
   ctx.fillText('▶  PLAY', 0, 2);
   ctx.shadowBlur=0; ctx.shadowOffsetY=0;
@@ -4631,11 +4781,11 @@ function drawMenu(){
   const rx = 30, ry = H-230;
   glassPanel(rx, ry, 140, 80, 14, C.coinHi);
   ctx.fillStyle = C.coinHi;
-  ctx.font = 'bold 11px Segoe UI'; ctx.textAlign='left';
+  ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('🎁 DAILY REWARD', rx+12, ry+22);
-  ctx.fillStyle='#fff'; ctx.font = 'bold 13px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font = 'bold 13px Chakra Petch';
   ctx.fillText('DAY '+G.dailyDay+' / 7', rx+12, ry+42);
-  ctx.fillStyle = C.coin; ctx.font='bold 15px Segoe UI';
+  ctx.fillStyle = C.coin; ctx.font='bold 15px Chakra Petch';
   ctx.fillText('+50 sparks', rx+12, ry+64);
   // notification dot (pulsing)
   const dotR = 5 + Math.sin(G.menuT*0.006)*1.2;
@@ -4652,11 +4802,11 @@ function drawMenu(){
   const sx = W-170, sy = H-230;
   glassPanel(sx, sy, 140, 80, 14, C.gem);
   ctx.fillStyle = C.gem;
-  ctx.font = 'bold 11px Segoe UI'; ctx.textAlign='left';
+  ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('🛒 UPGRADES', sx+12, sy+22);
-  ctx.fillStyle='#fff'; ctx.font = 'bold 13px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font = 'bold 13px Chakra Petch';
   ctx.fillText('Boost your run', sx+12, sy+42);
-  ctx.fillStyle=C.coinHi; ctx.font='bold 12px Segoe UI';
+  ctx.fillStyle=C.coinHi; ctx.font='bold 12px Chakra Petch';
   ctx.fillText('4 upgrades', sx+12, sy+64);
   ctx.restore();
   addButton('shop', sx, sy, 140, 80);
@@ -4666,11 +4816,11 @@ function drawMenu(){
   const kxStart = 30, kY = H-130, kW = W-60, kH = 84;
   glassPanel(kxStart, kY, kW, kH, 16, C.bombPink);
   ctx.fillStyle = C.bombPink;
-  ctx.font = 'bold 11px Segoe UI'; ctx.textAlign='left';
+  ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('👕 SKINS', kxStart+16, kY+22);
-  ctx.fillStyle='#fff'; ctx.font = 'bold 15px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font = 'bold 15px Chakra Petch';
   ctx.fillText(SKINS[G.skin].name+' equipped', kxStart+16, kY+44);
-  ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font='12px Segoe UI';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font='12px Chakra Petch';
   ctx.fillText(G.ownedSkins.length+' / '+Object.keys(SKINS).length+' unlocked  •  NEW: Neon Pulse', kxStart+16, kY+64);
   // preview mascot on right
   drawBomb(kxStart+kW-52, kY+kH/2-2, 0.45, 'happy', 0, 0,0,0);
@@ -4685,7 +4835,7 @@ function drawMenu(){
     ctx.strokeStyle='rgba(255,213,74,0.35)'; ctx.lineWidth=1;
     roundRect(W/2-110, H-478, 220, 32, 16); ctx.stroke();
     ctx.fillStyle=C.coinHi;
-    ctx.font='bold 13px Segoe UI'; ctx.textAlign='center';
+    ctx.font='bold 13px Chakra Petch'; ctx.textAlign='center';
     ctx.fillText('🏆 BEST: '+G.high+' m', W/2, H-457);
     ctx.restore();
   }
@@ -4699,10 +4849,10 @@ function drawMenu(){
     ctx.lineWidth = 1.2;
     roundRect(W/2-130, H-440, 260, 34, 17); ctx.stroke();
     ctx.fillStyle = mw.horizon;
-    ctx.font='bold 11px Segoe UI'; ctx.textAlign='center';
+    ctx.font='bold 11px Chakra Petch'; ctx.textAlign='center';
     ctx.fillText('HIGHEST WORLD REACHED', W/2, H-425);
     ctx.fillStyle = '#fff';
-    ctx.font='bold 13px Segoe UI';
+    ctx.font='bold 13px Chakra Petch';
     ctx.fillText(mw.emoji+' W'+G.maxWorld+' — '+mw.name, W/2, H-411);
     ctx.restore();
   }
@@ -4716,7 +4866,7 @@ function drawMenuHeader(){
   ctx.fillStyle = C.fuseHole;
   ctx.beginPath(); ctx.arc(lx+24, ly+lh/2, 18, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 16px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font = 'bold 16px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(G.level, lx+24, ly+lh/2+1);
   const xpX = lx+50, xpY = ly+18, xpW = 110, xpH = 12;
   ctx.fillStyle = C.bombDarker;
@@ -4727,7 +4877,7 @@ function drawMenuHeader(){
   ctx.fillStyle = xg;
   roundRect(xpX, xpY, xpW*xpN, xpH, 6); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = '10px Segoe UI'; ctx.textAlign='left';
+  ctx.font = '10px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('XP '+G.xp+' / '+G.xpMax, xpX, xpY+xpH+11);
   ctx.restore();
 
@@ -4739,7 +4889,7 @@ function drawMenuHeader(){
   ctx.fillStyle = C.coin;
   ctx.beginPath(); ctx.arc(cx2-cw+20, cy2+ch*0.35, 11, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font='bold 14px Segoe UI'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.font='bold 14px Chakra Petch'; ctx.textAlign='left'; ctx.textBaseline='middle';
   ctx.fillText(G.totalCoins.toLocaleString(), cx2-cw+38, cy2+ch*0.35);
   // gems
   ctx.fillStyle = C.gem;
@@ -4749,7 +4899,7 @@ function drawMenuHeader(){
   ctx.lineTo(cx2-cw+20, cy2+ch*0.9);
   ctx.lineTo(cx2-cw+12, cy2+ch*0.8);
   ctx.closePath(); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 13px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font='bold 13px Chakra Petch';
   ctx.fillText(G.totalGems, cx2-cw+38, cy2+ch*0.8);
   ctx.restore();
 }
@@ -4761,14 +4911,14 @@ function drawShop(){
   drawBackground();
   // header
   ctx.save();
-  ctx.font='900 42px Segoe UI'; ctx.textAlign='center';
+  ctx.font='900 42px Chakra Petch'; ctx.textAlign='center';
   ctx.fillStyle='rgba(0,0,0,0.5)';
   ctx.fillText('UPGRADES', W/2+2, 98);
   const g = ctx.createLinearGradient(0,60,0,110);
   g.addColorStop(0, C.bombPinkHi); g.addColorStop(1, C.fuseHole);
   ctx.fillStyle=g;
   ctx.fillText('UPGRADES', W/2, 96);
-  ctx.font='bold 13px Segoe UI'; ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.font='bold 13px Chakra Petch'; ctx.fillStyle='rgba(255,255,255,0.6)';
   ctx.fillText('Permanent boosts for every run', W/2, 120);
   ctx.restore();
 
@@ -4778,7 +4928,7 @@ function drawShop(){
   roundRect(W/2-80, 140, 160, 34, 17); ctx.fill();
   ctx.fillStyle=C.coin;
   ctx.beginPath(); ctx.arc(W/2-60, 157, 10, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 16px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#fff'; ctx.font='bold 16px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(G.totalCoins.toLocaleString(), W/2+12, 158);
   ctx.restore();
 
@@ -4806,10 +4956,10 @@ function drawShop(){
 
     // name + desc
     ctx.fillStyle='#fff';
-    ctx.font='bold 17px Segoe UI'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.font='bold 17px Chakra Petch'; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     ctx.fillText(u.name, x+84, y+30);
     ctx.fillStyle='rgba(255,255,255,0.6)';
-    ctx.font='12px Segoe UI';
+    ctx.font='12px Chakra Petch';
     ctx.fillText(u.desc, x+84, y+48);
 
     // level pips
@@ -4820,7 +4970,7 @@ function drawShop(){
       roundRect(pipsX+j*(pw+pgap), pipsY, pw, 6, 3); ctx.fill();
     }
     ctx.fillStyle='rgba(255,255,255,0.7)';
-    ctx.font='11px Segoe UI';
+    ctx.font='11px Chakra Petch';
     ctx.fillText('LVL '+lvl+' / '+u.max, pipsX, pipsY+22);
 
     // buy button
@@ -4829,7 +4979,7 @@ function drawShop(){
       ctx.fillStyle = 'rgba(255,255,255,0.1)';
       roundRect(bx2,by2,bw,bh,10); ctx.fill();
       ctx.fillStyle='#aaa';
-      ctx.font='bold 14px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='bold 14px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('MAXED', bx2+bw/2, by2+bh/2);
     } else {
       const cost = u.cost(lvl);
@@ -4840,12 +4990,12 @@ function drawShop(){
       ctx.fillStyle = bg;
       roundRect(bx2,by2,bw,bh,10); ctx.fill();
       ctx.fillStyle='#fff';
-      ctx.font='bold 12px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='bold 12px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('UPGRADE', bx2+bw/2, by2+14);
       ctx.fillStyle = C.coin;
       ctx.beginPath(); ctx.arc(bx2+bw/2-22, by2+30, 6, 0, Math.PI*2); ctx.fill();
       ctx.fillStyle=afford?'#fff':'#ffccd0';
-      ctx.font='bold 13px Segoe UI';
+      ctx.font='bold 13px Chakra Petch';
       ctx.fillText(cost, bx2+bw/2+8, by2+32);
       addButton('buy_'+key, bx2, by2, bw, bh);
     }
@@ -4862,14 +5012,14 @@ function drawShop(){
 function drawSkins(){
   drawBackground();
   ctx.save();
-  ctx.font='900 42px Segoe UI'; ctx.textAlign='center';
+  ctx.font='900 42px Chakra Petch'; ctx.textAlign='center';
   ctx.fillStyle='rgba(0,0,0,0.5)';
   ctx.fillText('SKINS', W/2+2, 98);
   const g = ctx.createLinearGradient(0,60,0,110);
   g.addColorStop(0, C.bombPinkHi); g.addColorStop(1, C.fuseHole);
   ctx.fillStyle=g;
   ctx.fillText('SKINS', W/2, 96);
-  ctx.font='bold 13px Segoe UI'; ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.font='bold 13px Chakra Petch'; ctx.fillStyle='rgba(255,255,255,0.6)';
   ctx.fillText('Pure cosmetics — no pay-to-win', W/2, 120);
   ctx.restore();
 
@@ -4879,7 +5029,7 @@ function drawSkins(){
   roundRect(W/2-120, 140, 240, 34, 17); ctx.fill();
   ctx.fillStyle=C.coin;
   ctx.beginPath(); ctx.arc(W/2-90, 157, 9, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='bold 14px Segoe UI'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillStyle='#fff'; ctx.font='bold 14px Chakra Petch'; ctx.textAlign='left'; ctx.textBaseline='middle';
   ctx.fillText(G.totalCoins.toLocaleString(), W/2-74, 158);
   ctx.fillStyle=C.gem;
   ctx.beginPath();
@@ -4917,17 +5067,17 @@ function drawSkins(){
 
     // name
     ctx.fillStyle='#fff';
-    ctx.font='bold 15px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.font='bold 15px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.fillText(s.name, x+cardW/2, y+cardH-48);
 
     // status / cost
     if(equipped){
       ctx.fillStyle=C.fuseHole;
-      ctx.font='bold 12px Segoe UI';
+      ctx.font='bold 12px Chakra Petch';
       ctx.fillText('EQUIPPED', x+cardW/2, y+cardH-26);
     } else if(owned){
       ctx.fillStyle='rgba(255,255,255,0.8)';
-      ctx.font='bold 12px Segoe UI';
+      ctx.font='bold 12px Chakra Petch';
       ctx.fillText('TAP TO EQUIP', x+cardW/2, y+cardH-26);
     } else {
       // cost pill
@@ -4937,7 +5087,7 @@ function drawSkins(){
       ctx.fillStyle = afford? (s.cur==='coin'?'#ffd54a':C.gem) : '#555';
       roundRect(px, py, pw, ph, 13); ctx.fill();
       ctx.fillStyle = '#0a0a1f';
-      ctx.font='bold 13px Segoe UI';
+      ctx.font='bold 13px Chakra Petch';
       if(s.cur==='coin') ctx.fillText('★ '+s.cost, x+cardW/2, py+18);
       else ctx.fillText('💎 '+s.cost, x+cardW/2, py+18);
     }
@@ -4955,7 +5105,7 @@ function drawBackButton(){
   ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=1.5;
   roundRect(bx,by,bw,bh,22); ctx.stroke();
   ctx.fillStyle='#fff';
-  ctx.font='bold 22px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 22px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('←', bx+bw/2, by+bh/2+1);
   ctx.restore();
   addButton('back', bx, by, bw, bh);
@@ -4974,7 +5124,7 @@ function drawGameOver(){
   ctx.save();
   ctx.globalAlpha = a;
   ctx.textAlign='center';
-  ctx.font='900 72px Segoe UI';
+  ctx.font='900 72px Chakra Petch';
   const grad = ctx.createLinearGradient(0,110,0,180);
   grad.addColorStop(0, C.fireHi); grad.addColorStop(1, C.fuseHole);
   ctx.fillStyle = 'rgba(255,77,184,0.3)';
@@ -4989,12 +5139,12 @@ function drawGameOver(){
   roundRect(px,py,pw,ph,22); ctx.stroke();
 
   ctx.textAlign='left';
-  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='12px Segoe UI';
+  ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='12px Chakra Petch';
   ctx.fillText('DISTANCE TRAVELED', px+24, py+36);
-  ctx.fillStyle='#fff'; ctx.font='900 34px Segoe UI';
+  ctx.fillStyle='#fff'; ctx.font='900 34px Chakra Petch';
   ctx.fillText(Math.floor(G.distance)+' m', px+24, py+72);
   if(Math.floor(G.distance)>=G.high && G.high>0 && Math.floor(G.distance)>0){
-    ctx.fillStyle=C.coinHi; ctx.font='bold 12px Segoe UI';
+    ctx.fillStyle=C.coinHi; ctx.font='bold 12px Chakra Petch';
     ctx.fillText('🏆 NEW RECORD!', px+24, py+90);
   }
 
@@ -5006,23 +5156,23 @@ function drawGameOver(){
     ['Waves cleared', G.bossSurvived, C.fire],
     ['XP earned', '+'+(Math.floor(G.distance/10)+G.runCoins), C.water],
   ];
-  ctx.font='14px Segoe UI';
+  ctx.font='14px Chakra Petch';
   rows.forEach((r,i)=>{
     const y = rowY + i*40;
     ctx.fillStyle='rgba(255,255,255,0.08)';
     roundRect(px+20,y-18,pw-40,34,10); ctx.fill();
     ctx.fillStyle='#fff'; ctx.textAlign='left';
     ctx.fillText(r[0], px+36, y+4);
-    ctx.fillStyle=r[2]; ctx.font='bold 16px Segoe UI';
+    ctx.fillStyle=r[2]; ctx.font='bold 16px Chakra Petch';
     ctx.textAlign='right';
     ctx.fillText(r[1], px+pw-36, y+4);
-    ctx.font='14px Segoe UI';
+    ctx.font='14px Chakra Petch';
   });
 
   // XP bar
   const xY = py+340;
   ctx.fillStyle='rgba(255,255,255,0.5)';
-  ctx.font='11px Segoe UI'; ctx.textAlign='left';
+  ctx.font='11px Chakra Petch'; ctx.textAlign='left';
   ctx.fillText('LEVEL '+G.level, px+24, xY);
   ctx.fillStyle=C.bombDarker;
   roundRect(px+24,xY+8,pw-48,12,6); ctx.fill();
@@ -5041,7 +5191,7 @@ function drawGameOver(){
     ctx.strokeStyle = C.coinHi; ctx.lineWidth = 1.5;
     roundRect(px+20, aY-18, pw-40, 34, 10); ctx.stroke();
     ctx.fillStyle=C.coinHi;
-    ctx.font='bold 12px Segoe UI'; ctx.textAlign='left';
+    ctx.font='bold 12px Chakra Petch'; ctx.textAlign='left';
     const ach = G.bossSurvived>0 ? '🏅 UNLOCKED: "Fire Walker"' : '🏅 UNLOCKED: "Burning Bright"';
     ctx.fillText(ach, px+36, aY+4);
   }
@@ -5069,7 +5219,7 @@ function drawGameOver(){
   ctx.lineWidth=1.5;
   roundRect(-rbw/2,-rbh/2,rbw,rbh,27); ctx.stroke();
   ctx.fillStyle = canRevive ? '#3a2000' : '#888';
-  ctx.font='bold 18px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 18px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('✨ CONTINUE', -36, 0);
   // gem cost
   ctx.fillStyle = canRevive ? C.gem : '#666';
@@ -5077,7 +5227,7 @@ function drawGameOver(){
   ctx.moveTo(44, -7); ctx.lineTo(52, 0); ctx.lineTo(44, 7); ctx.lineTo(36, 0);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = canRevive ? '#3a2000' : '#888';
-  ctx.font='bold 20px Segoe UI';
+  ctx.font='bold 20px Chakra Petch';
   ctx.fillText('5', 76, 1);
   ctx.restore();
   addButton('revive', rbx, rby, rbw, rbh);
@@ -5092,12 +5242,12 @@ function drawGameOver(){
   roundRect(hx,hy,hw,hh,27); ctx.fill();
   ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1.5;
   roundRect(hx,hy,hw,hh,27); ctx.stroke();
-  ctx.fillStyle='#fff'; ctx.font='bold 17px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#fff'; ctx.font='bold 17px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText('🏠  BACK TO MENU', hx+hw/2, hy+hh/2);
   addButton('home', hx, hy, hw, hh);
   // Info note under HOME
   ctx.fillStyle='rgba(255,255,255,0.45)';
-  ctx.font='11px Segoe UI';
+  ctx.font='11px Chakra Petch';
   ctx.fillText('Next run starts from World 1', W/2, hy+hh+18);
 
   ctx.restore();
@@ -5302,7 +5452,7 @@ function render(){
         ctx.beginPath(); ctx.arc(ox2,oy2,10,0,Math.PI*2); ctx.stroke();
         // label
         ctx.fillStyle = it.color;
-        ctx.font = 'bold 11px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillText(it.label, ox2, oy2+1);
       }
     }
@@ -5326,10 +5476,23 @@ function render(){
       drawBomb(tp.x, tp.y, 0.58, 'jump', 0, 0, 0, 0, tp.sqX, tp.sqY);
       ctx.restore();
     }
-    const scale = (G.rocket>0 ? 1.1 : 1) * 0.6; // compact bomb — clearer readability of world
+    // Subtle idle breathing when grounded (continuous soft scale pulse)
+    const breath = B.grounded ? 1 + Math.sin(G.t*0.004) * 0.018 : 1;
+    const scale = (G.rocket>0 ? 1.1 : 1) * 0.6 * breath;
     const flicker = (B.iframes>0 && G.frame%4<2) ? 0.4 : 1;
+    // Eye tracking based on state
+    let eyeX = 0.3, eyeY = 0;
+    if(!B.grounded){
+      if(B.vy < -3) { eyeX = 0; eyeY = -0.8; }     // look up while rising
+      else if(B.vy > 3) { eyeX = 0.1; eyeY = 0.7; } // look down while falling
+      else eyeX = 0.2;
+    } else if(B.pounding){
+      eyeY = 0.8;
+    }
+    // Random glance left/right occasionally when running
+    if(B.grounded && Math.sin(G.t*0.0008) > 0.93) eyeX = -0.3;
     ctx.save(); ctx.globalAlpha = flicker;
-    drawBomb(B.x, B.y, scale, B.expression, B.bob, 0, 0, B.blink>0?1:0, B.squashX, B.squashY);
+    drawBomb(B.x, B.y, scale, B.expression, B.bob, eyeX, eyeY, B.blink>0?1:0, B.squashX, B.squashY);
     ctx.restore();
   }
   // Shockwave rings
@@ -5369,7 +5532,7 @@ function render(){
     ctx.strokeStyle = C.coinHi; ctx.lineWidth=2;
     roundRect(W/2-90, 215, 180, 30, 15); ctx.stroke();
     ctx.fillStyle = C.coinHi;
-    ctx.font='bold 14px Segoe UI'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='bold 14px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('✨ SPARK RUSH '+(G.coinRushTimer/1000).toFixed(1)+'s', W/2, 230);
     ctx.restore();
   }
@@ -5398,6 +5561,8 @@ function render(){
     ctx.fillStyle = `rgba(255,255,255,${1-G.transition})`;
     ctx.fillRect(0,0,W,H);
   }
+  // BLOOM pass — applied before overlays so UI stays crisp
+  if(G.state==='play' && !G.tutModal) applyBloom();
   // Countdown overlay (drawn below tutorial if both active)
   if(G.state==='play' && G.countdown > 0){
     drawCountdown();
@@ -5438,7 +5603,7 @@ function drawCountdown(){
   ctx.restore();
   // Text
   ctx.fillStyle = color;
-  ctx.font = isGo ? '900 140px Segoe UI, Arial' : '900 200px Segoe UI, Arial';
+  ctx.font = isGo ? '900 140px Russo One, sans-serif' : '900 200px Russo One, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = color;
@@ -5453,7 +5618,7 @@ function drawCountdown(){
   if(!isGo){
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 18px Segoe UI';
+    ctx.font = 'bold 18px Chakra Petch';
     ctx.textAlign = 'center';
     ctx.fillText('GET READY!', W/2, H/2 + 140);
   }
