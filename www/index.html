@@ -2483,424 +2483,1015 @@ function drawBomb(bx, by, scale=1, expression='run', animBob=0, eyesLookX=0, eye
 function drawEnemy(e){
   const cx = e.x + e.w/2;
   const by = e.y + (e.bobY||0);
+  // Hit flash (invincibility blink after damage)
+  const hitFlash = (e.hitFlash && e.hitFlash > 0) ? e.hitFlash : 0;
+  // Soft contact shadow helper
+  const softShadow = (sx, sy, sw, alpha=0.42) => {
+    ctx.save();
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw);
+    sg.addColorStop(0, `rgba(0,0,0,${alpha})`);
+    sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.ellipse(sx, sy, sw, sw*0.28, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  };
+  // Rim-light helper — thin bright arc opposite the main light source
+  const rimLight = (x, y, r, color='rgba(255,255,255,0.55)', arcStart=0.15, arcEnd=1.85) => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r*0.08;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y, r*0.94, Math.PI*arcStart, Math.PI*arcEnd); ctx.stroke();
+    ctx.restore();
+  };
+  // Specular highlight helper — bright glossy dot on top-left
+  const specular = (x, y, rx, ry, alpha=0.75) => {
+    ctx.save();
+    const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    g.addColorStop(0.5, `rgba(255,255,255,${alpha*0.3})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y, rx, ry, -0.5, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  };
 
-  // -------- SPACE GRUB (was 'ember') — clean ball-shape with two-tone body --------
+  // =======================================================================
+  //  SPACE GRUB (ember) — gelatinous cosmic jelly blob, Apple-grade polish
+  //  Layers: outer glow · ambient shadow · rim · wobble body gradient ·
+  //          inner luminous core · specular · glossy eyes · antenna whips
+  // =======================================================================
   if(e.kind==='ember'){
     ctx.save();
-    // drop shadow
-    ctx.fillStyle='rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(cx, by+e.h-1, e.w*0.38, 3.5, 0, 0, Math.PI*2); ctx.fill();
-
-    // Two-tone body (matches Bombița silhouette): dark navy bottom, bright teal top
     const r = e.w*0.46;
+    // jiggle wobble — horizontal squash based on hop
+    const sqX = 1 + Math.sin(e.hop*3.0)*0.08;
+    const sqY = 1 - Math.sin(e.hop*3.0)*0.10;
     const bcy = by + e.h*0.5;
-    // Bottom dark half
-    ctx.fillStyle = '#0a1e4a';
-    ctx.beginPath(); ctx.arc(cx, bcy, r, 0, Math.PI*2); ctx.fill();
-    // Top teal half with gradient
-    const tg = ctx.createRadialGradient(cx-8, bcy-10, 3, cx, bcy, r);
-    tg.addColorStop(0, '#c8eaff');
-    tg.addColorStop(0.5, '#6ab0e8');
-    tg.addColorStop(1, '#2a5a9a');
-    ctx.fillStyle = tg;
-    ctx.beginPath();
-    ctx.arc(cx, bcy, r, Math.PI, Math.PI*2, false);
-    ctx.bezierCurveTo(cx+r*0.9, bcy+2, cx-r*0.9, bcy+2, cx-r, bcy);
-    ctx.closePath(); ctx.fill();
-    // Outline for pop
-    ctx.strokeStyle = '#0a1e4a';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx, bcy, r, 0, Math.PI*2); ctx.stroke();
 
-    // Highlight sheen on top-left
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath(); ctx.ellipse(cx-r*0.45, bcy-r*0.45, r*0.12, r*0.2, -0.4, 0, Math.PI*2); ctx.fill();
+    // 1. Soft contact shadow
+    softShadow(cx, by+e.h-1, r*1.05, 0.50);
 
-    // Two tall antennae with glowing pink orbs
-    const wiggle = Math.sin(e.hop*2.2)*1.5;
-    ctx.strokeStyle = '#0a1e4a';
-    ctx.lineWidth = 2.5; ctx.lineCap='round';
-    // left antenna
+    // 2. Outer ambient glow (cyan halo — makes it pop off background)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const halo = ctx.createRadialGradient(cx, bcy, r*0.6, cx, bcy, r*1.7);
+    halo.addColorStop(0, 'rgba(80,200,255,0.22)');
+    halo.addColorStop(1, 'rgba(80,200,255,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(cx, bcy, r*1.7, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 3. Body base — multi-stop radial gradient (cool icy cyan → deep navy)
+    ctx.save();
+    ctx.translate(cx, bcy);
+    ctx.scale(sqX, sqY);
+    const bodyG = ctx.createRadialGradient(-r*0.38, -r*0.42, r*0.08, 0, 0, r*1.05);
+    bodyG.addColorStop(0,    '#f0faff');     // almost white top highlight
+    bodyG.addColorStop(0.18, '#b8e4ff');
+    bodyG.addColorStop(0.45, '#5aa2e0');
+    bodyG.addColorStop(0.75, '#1e4888');
+    bodyG.addColorStop(1,    '#06112e');     // deep navy edge
+    ctx.fillStyle = bodyG;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+
+    // 4. Rim light opposite main light (bottom-right glow)
+    const rimG = ctx.createRadialGradient(r*0.55, r*0.55, r*0.55, 0, 0, r*1.02);
+    rimG.addColorStop(0, 'rgba(120,220,255,0)');
+    rimG.addColorStop(0.88, 'rgba(120,220,255,0)');
+    rimG.addColorStop(0.96, 'rgba(180,240,255,0.55)');
+    rimG.addColorStop(1, 'rgba(120,220,255,0)');
+    ctx.fillStyle = rimG;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.fill();
+
+    // 5. Inner luminous core (pulsing cyan energy)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const corePulse = 0.8 + Math.sin(G.t*0.005)*0.2;
+    const coreG = ctx.createRadialGradient(0, r*0.15, 0, 0, r*0.15, r*0.65);
+    coreG.addColorStop(0, `rgba(140,230,255,${0.45*corePulse})`);
+    coreG.addColorStop(1, 'rgba(140,230,255,0)');
+    ctx.fillStyle = coreG;
+    ctx.beginPath(); ctx.arc(0, r*0.15, r*0.65, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 6. Dark outline (contour)
+    ctx.strokeStyle = 'rgba(4,10,30,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+
+    // 7. Specular glossy highlight (top-left)
+    specular(cx - r*0.42, bcy - r*0.48, r*0.22, r*0.30, 0.85);
+    // tiny secondary pinpoint (makes it look wet)
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(cx - r*0.28, bcy - r*0.58, 1.5, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 8. Antennae — dual whip tentacles with pink energy orbs
+    const wiggle = Math.sin(G.t*0.008 + e.hop*0.6)*3;
+    // darkened stroke with inner highlight
+    ctx.strokeStyle = '#06112e';
+    ctx.lineWidth = 3; ctx.lineCap='round';
     ctx.beginPath();
-    ctx.moveTo(cx-7, bcy-r*0.85);
-    ctx.quadraticCurveTo(cx-10+wiggle, bcy-r*1.4, cx-10+wiggle, bcy-r*1.8);
+    ctx.moveTo(cx-7, bcy-r*0.82);
+    ctx.quadraticCurveTo(cx-11+wiggle, bcy-r*1.3, cx-11+wiggle, bcy-r*1.9);
     ctx.stroke();
-    // right antenna
     ctx.beginPath();
-    ctx.moveTo(cx+7, bcy-r*0.85);
-    ctx.quadraticCurveTo(cx+10-wiggle, bcy-r*1.4, cx+10-wiggle, bcy-r*1.8);
+    ctx.moveTo(cx+7, bcy-r*0.82);
+    ctx.quadraticCurveTo(cx+11-wiggle, bcy-r*1.3, cx+11-wiggle, bcy-r*1.9);
     ctx.stroke();
-    // Glowing pink orbs at tips
-    const orbY = bcy - r*1.8;
+    // inner stroke highlight
+    ctx.strokeStyle = 'rgba(120,180,220,0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx-7, bcy-r*0.82);
+    ctx.quadraticCurveTo(cx-11+wiggle, bcy-r*1.3, cx-11+wiggle, bcy-r*1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx+7, bcy-r*0.82);
+    ctx.quadraticCurveTo(cx+11-wiggle, bcy-r*1.3, cx+11-wiggle, bcy-r*1.9);
+    ctx.stroke();
+
+    // Glowing pink orbs at antenna tips
+    const orbY = bcy - r*1.9;
+    const orbPulse = 1 + Math.sin(G.t*0.01)*0.15;
     ctx.save();
     ctx.globalCompositeOperation='lighter';
     for(const side of [-1, 1]){
-      const ox2 = cx + side*10 + (side===-1?wiggle:-wiggle);
-      const ag = ctx.createRadialGradient(ox2, orbY, 0, ox2, orbY, 10);
-      ag.addColorStop(0, 'rgba(255,140,220,1)');
-      ag.addColorStop(0.5, 'rgba(255,77,184,0.6)');
+      const ox = cx + side*11 + (side===-1?wiggle:-wiggle);
+      const ag = ctx.createRadialGradient(ox, orbY, 0, ox, orbY, 14*orbPulse);
+      ag.addColorStop(0, 'rgba(255,180,240,1)');
+      ag.addColorStop(0.35, 'rgba(255,100,200,0.7)');
       ag.addColorStop(1, 'rgba(255,77,184,0)');
       ctx.fillStyle = ag;
-      ctx.beginPath(); ctx.arc(ox2, orbY, 10, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ox, orbY, 14*orbPulse, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
-    // solid orb cores
-    ctx.fillStyle = '#ff6ec4';
-    ctx.strokeStyle = '#8f0c6a';
-    ctx.lineWidth = 1;
     for(const side of [-1,1]){
-      const ox2 = cx + side*10 + (side===-1?wiggle:-wiggle);
-      ctx.beginPath(); ctx.arc(ox2, orbY, 3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      const ox = cx + side*11 + (side===-1?wiggle:-wiggle);
+      // orb core with highlight
+      const og = ctx.createRadialGradient(ox-1, orbY-1, 0, ox, orbY, 3.5);
+      og.addColorStop(0, '#fff');
+      og.addColorStop(0.4, '#ffb8e0');
+      og.addColorStop(1, '#c03080');
+      ctx.fillStyle = og;
+      ctx.beginPath(); ctx.arc(ox, orbY, 3.5, 0, Math.PI*2); ctx.fill();
     }
 
-    // BIG expressive eyes (like Bombița)
+    // 9. Big expressive glossy eyes
     const eyeY = bcy - r*0.05;
-    const eyeW = r*0.32, eyeH = r*0.38;
-    ctx.fillStyle = '#ffffff';
+    const eyeW = r*0.33, eyeH = r*0.40;
+    // white with subtle gradient (not flat white)
+    const eyeG = ctx.createRadialGradient(cx-r*0.32, eyeY-2, 0, cx-r*0.32, eyeY, eyeW);
+    eyeG.addColorStop(0, '#ffffff');
+    eyeG.addColorStop(1, '#d0dce8');
+    ctx.fillStyle = eyeG;
     ctx.beginPath(); ctx.ellipse(cx-r*0.32, eyeY, eyeW, eyeH, 0, 0, Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(cx+r*0.32, eyeY, eyeW, eyeH, 0, 0, Math.PI*2); ctx.fill();
-    // Pupils (looking at player — always offset toward bomb direction)
-    ctx.fillStyle = '#0a1e4a';
-    const pupilOff = -2;
-    ctx.beginPath(); ctx.ellipse(cx-r*0.32+pupilOff, eyeY+1, eyeW*0.55, eyeH*0.6, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx+r*0.32+pupilOff, eyeY+1, eyeW*0.55, eyeH*0.6, 0, 0, Math.PI*2); ctx.fill();
-    // Shine dots on pupils
+    // eye inner shadow (subtle ring)
+    ctx.strokeStyle = 'rgba(0,20,60,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(cx-r*0.32, eyeY, eyeW, eyeH, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx+r*0.32, eyeY, eyeW, eyeH, 0, 0, Math.PI*2); ctx.stroke();
+    // Pupils — spherical with highlight (3D feel)
+    const pOff = -2;
+    for(const side of [-1, 1]){
+      const ex = cx + side*r*0.32 + pOff;
+      const pg = ctx.createRadialGradient(ex-1, eyeY-1, 0, ex, eyeY+1, eyeW*0.6);
+      pg.addColorStop(0, '#3a4868');
+      pg.addColorStop(0.6, '#0a1e4a');
+      pg.addColorStop(1, '#040a1e');
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.ellipse(ex, eyeY+1, eyeW*0.58, eyeH*0.62, 0, 0, Math.PI*2); ctx.fill();
+    }
+    // Dual catchlights (primary + secondary for "alive" look)
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(cx-r*0.32+pupilOff-2, eyeY-2, 1.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx+r*0.32+pupilOff-2, eyeY-2, 1.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx-r*0.34-1, eyeY-2, 1.8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+r*0.30-1, eyeY-2, 1.8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(cx-r*0.30+1, eyeY+2, 0.8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+r*0.36+1, eyeY+2, 0.8, 0, Math.PI*2); ctx.fill();
 
-    // Tiny waddle feet (only the white shoes, like Bombița)
+    // 10. Waddle feet (Bombița brand colors)
     const legP = Math.sin(e.hop*3);
-    ctx.fillStyle = '#ffffff';
-    roundRect(cx-11, by+e.h-6+(legP>0?0:-1.5), 8, 5, 2); ctx.fill();
-    roundRect(cx+3, by+e.h-6+(legP<0?0:-1.5), 8, 5, 2); ctx.fill();
-    // Sole stripe (matching bombita colors)
-    ctx.fillStyle = '#ff4db8';
-    ctx.fillRect(cx-11, by+e.h-3+(legP>0?0:-1.5), 8, 1.5);
-    ctx.fillStyle = '#4dd0ff';
-    ctx.fillRect(cx+3, by+e.h-3+(legP<0?0:-1.5), 8, 1.5);
+    for(const s of [[-1, C.fuseHole],[1, '#4dd0ff']]){
+      const fx = cx + s[0]*7 - 4;
+      const fy = by+e.h-6 + (s[0]*legP>0?0:-1.5);
+      // shoe body with gradient
+      const shG = ctx.createLinearGradient(fx, fy, fx, fy+5);
+      shG.addColorStop(0, '#ffffff'); shG.addColorStop(1, '#c4cad4');
+      ctx.fillStyle = shG;
+      roundRect(fx, fy, 8, 5, 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,10,30,0.4)'; ctx.lineWidth = 0.6;
+      roundRect(fx, fy, 8, 5, 2); ctx.stroke();
+      // sole stripe
+      ctx.fillStyle = s[1];
+      ctx.fillRect(fx, fy+3, 8, 1.8);
+    }
 
+    // 11. Hit flash overlay
+    if(hitFlash > 0){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `rgba(255,255,255,${hitFlash*0.8})`;
+      ctx.beginPath(); ctx.arc(cx, bcy, r*1.2, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
-  // -------- ASTRO MINE (was 'minibomb') — tiny angry bomb cousin --------
+  // =======================================================================
+  //  ASTRO MINE (minibomb) — chromed naval mine with rotating warning ring
+  //  Layers: drop shadow · chromed metal body · warning stripes · fuse sparks ·
+  //          bevel highlights · angry eyes · pulsing danger light
+  // =======================================================================
   else if(e.kind==='minibomb'){
     const mcx = cx, mcy = by + e.h*0.5;
     ctx.save();
-    // drop shadow
-    ctx.fillStyle='rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(mcx, by+e.h+1, 14, 3, 0, 0, Math.PI*2); ctx.fill();
-    ctx.translate(mcx, mcy);
+    // subtle angry jitter (charging to explode feel)
+    const jitter = Math.sin(G.t*0.04)*0.4;
+    ctx.translate(mcx+jitter, mcy);
 
-    // Body — two-tone matching Bombița (magenta top, dark bottom)
-    const R = 18;
-    // bottom dark
-    ctx.fillStyle = '#1a0f36';
-    ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2); ctx.fill();
-    // top magenta with gradient
-    const tg = ctx.createRadialGradient(-5,-8,2,0,-2,R);
-    tg.addColorStop(0, '#ff9ed6');
-    tg.addColorStop(0.5, '#d45eb0');
-    tg.addColorStop(1, '#7a1860');
-    ctx.fillStyle = tg;
-    ctx.beginPath();
-    ctx.arc(0, 0, R, Math.PI, Math.PI*2, false);
-    ctx.bezierCurveTo(R*0.9, 2, -R*0.9, 2, -R, 0);
-    ctx.closePath(); ctx.fill();
-    // outline
-    ctx.strokeStyle='#0a061a'; ctx.lineWidth=1.3;
-    ctx.beginPath(); ctx.arc(0,0,R,0,Math.PI*2); ctx.stroke();
-
-    // highlight sheen
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath(); ctx.ellipse(-R*0.45, -R*0.4, 2, 4, -0.4, 0, Math.PI*2); ctx.fill();
-
-    // Fuse hole + short fuse with spark (mini Bombița style!)
-    ctx.fillStyle = C.fuseHole;
-    ctx.beginPath(); ctx.ellipse(2, -R*0.85, 4, 2.5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle='#0a061a'; ctx.lineWidth=1.8; ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(2, -R*0.85); ctx.quadraticCurveTo(8, -R*1.2, 10, -R*1.5);
-    ctx.stroke();
-    // tiny spark on fuse tip (4 rays)
+    // 1. Danger aura (pulsing red)
+    const dangerPulse = 0.6 + Math.sin(G.t*0.01)*0.4;
     ctx.save();
-    ctx.translate(10, -R*1.5);
     ctx.globalCompositeOperation='lighter';
-    const sg = ctx.createRadialGradient(0,0,0, 0,0,7);
-    sg.addColorStop(0, 'rgba(255,180,71,1)');
-    sg.addColorStop(1, 'rgba(255,120,40,0)');
-    ctx.fillStyle=sg;
-    ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle=C.spark; ctx.lineWidth=1.3; ctx.lineCap='round';
-    const rSize = 2.2 + Math.sin(G.t*0.03)*0.5;
-    for(let i=0;i<6;i++){
-      const a = (i/6)*Math.PI*2 + G.t*0.008;
+    const dg = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
+    dg.addColorStop(0, `rgba(255,60,100,${0.26*dangerPulse})`);
+    dg.addColorStop(1, 'rgba(255,60,100,0)');
+    ctx.fillStyle = dg;
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 2. Contact shadow
+    softShadow(0, 22, 16, 0.45);
+
+    const R = 18;
+
+    // 3. Body — chromed metal gradient (dark magenta → hot pink → highlight)
+    const bodyG = ctx.createRadialGradient(-R*0.45, -R*0.42, R*0.1, 0, 0, R*1.05);
+    bodyG.addColorStop(0,    '#ffd8ee');
+    bodyG.addColorStop(0.18, '#ff8ccb');
+    bodyG.addColorStop(0.55, '#b8358c');
+    bodyG.addColorStop(0.85, '#4a0a36');
+    bodyG.addColorStop(1,    '#140414');
+    ctx.fillStyle = bodyG;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.fill();
+
+    // 4. Equatorial warning stripe (caution band)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 0, R-0.5, 0, Math.PI*2); ctx.clip();
+    // caution zebra band
+    ctx.translate(0, 0.5);
+    ctx.rotate(G.t*0.0008);
+    ctx.fillStyle = '#1a0a18';
+    ctx.fillRect(-R*1.2, -3.5, R*2.4, 7);
+    ctx.fillStyle = '#ffd54a';
+    for(let i=-4; i<=4; i++){
+      ctx.fillRect(i*5.2, -3, 3.2, 6);
+    }
+    ctx.restore();
+
+    // 5. Rim light (bottom-right)
+    const rimG = ctx.createRadialGradient(R*0.55, R*0.55, R*0.55, 0, 0, R*1.02);
+    rimG.addColorStop(0, 'rgba(255,140,200,0)');
+    rimG.addColorStop(0.90, 'rgba(255,140,200,0)');
+    rimG.addColorStop(0.97, 'rgba(255,200,230,0.55)');
+    rimG.addColorStop(1, 'rgba(255,140,200,0)');
+    ctx.fillStyle = rimG;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.fill();
+
+    // 6. Dark contour outline
+    ctx.strokeStyle = '#0a040f';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI*2); ctx.stroke();
+
+    // 7. Rivet studs around the body (militaristic)
+    ctx.fillStyle = '#d8a2c0';
+    ctx.strokeStyle = '#3a0826';
+    ctx.lineWidth = 0.5;
+    for(let i=0; i<6; i++){
+      const a = (i/6)*Math.PI*2 + Math.PI/6;
+      const rx = Math.cos(a)*R*0.82, ry = Math.sin(a)*R*0.82;
+      ctx.beginPath(); ctx.arc(rx, ry, 1.4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+
+    // 8. Specular top-left glossy sheen
+    specular(-R*0.42, -R*0.48, R*0.22, R*0.32, 0.8);
+
+    // 9. Fuse hole + braided fuse
+    ctx.fillStyle = '#1a0612';
+    ctx.beginPath(); ctx.ellipse(2, -R*0.88, 4.2, 2.6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#7a1e08'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.ellipse(2, -R*0.88, 4.2, 2.6, 0, 0, Math.PI*2); ctx.stroke();
+    // fuse rope with twist shading
+    ctx.strokeStyle = '#6a3420';
+    ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(2, -R*0.88);
+    ctx.quadraticCurveTo(8, -R*1.2, 11, -R*1.55);
+    ctx.stroke();
+    // fuse inner highlight (braid)
+    ctx.strokeStyle = '#d4926a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(2, -R*0.88);
+    ctx.quadraticCurveTo(8, -R*1.2, 11, -R*1.55);
+    ctx.stroke();
+
+    // 10. Spark tip — real volumetric burst
+    ctx.save();
+    ctx.translate(11, -R*1.55);
+    ctx.globalCompositeOperation='lighter';
+    // outer heat glow
+    const hg = ctx.createRadialGradient(0,0,0, 0,0, 11);
+    hg.addColorStop(0, 'rgba(255,220,120,0.95)');
+    hg.addColorStop(0.5, 'rgba(255,120,40,0.55)');
+    hg.addColorStop(1, 'rgba(255,80,20,0)');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(0,0,11,0,Math.PI*2); ctx.fill();
+    // star rays
+    ctx.strokeStyle = '#ffd080'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    const rSize = 2.8 + Math.sin(G.t*0.04)*0.6;
+    for(let i=0; i<8; i++){
+      const a = (i/8)*Math.PI*2 + G.t*0.006;
+      const len = i%2===0 ? rSize+3 : rSize+1.5;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a)*1, Math.sin(a)*1);
-      ctx.lineTo(Math.cos(a)*(rSize+1.5), Math.sin(a)*(rSize+1.5));
+      ctx.moveTo(Math.cos(a)*1.2, Math.sin(a)*1.2);
+      ctx.lineTo(Math.cos(a)*len, Math.sin(a)*len);
       ctx.stroke();
     }
-    ctx.fillStyle=C.sparkHot;
-    ctx.beginPath(); ctx.arc(0,0,1.5,0,Math.PI*2); ctx.fill();
+    // white-hot core
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0,0,1.8,0,Math.PI*2); ctx.fill();
     ctx.restore();
 
-    // Angry eyes
-    ctx.fillStyle='#ffffff';
-    ctx.beginPath(); ctx.ellipse(-5, 4, 4, 4.5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(5, 4, 4, 4.5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle='#0a061a';
-    ctx.beginPath(); ctx.arc(-4, 5, 2.2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6, 5, 2.2, 0, Math.PI*2); ctx.fill();
-    // Shine dots
-    ctx.fillStyle='#ffffff';
-    ctx.beginPath(); ctx.arc(-5, 4, 0.8, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(5, 4, 0.8, 0, Math.PI*2); ctx.fill();
-    // Angry brows (red!)
-    ctx.strokeStyle='#ff3050'; ctx.lineWidth=2.2; ctx.lineCap='round';
+    // 11. Angry eyes — 3D spherical with catchlights
+    for(const side of [-1, 1]){
+      const ex = side*5;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(ex, 4, 4.2, 4.8, 0, 0, Math.PI*2); ctx.fill();
+      // eye inner ring
+      ctx.strokeStyle = 'rgba(40,0,20,0.3)'; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.ellipse(ex, 4, 4.2, 4.8, 0, 0, Math.PI*2); ctx.stroke();
+      // pupil with gradient
+      const pg = ctx.createRadialGradient(ex-1, 4, 0, ex, 5, 2.4);
+      pg.addColorStop(0, '#3a1020');
+      pg.addColorStop(1, '#0a0208');
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.arc(ex+(side>0?1:-1), 5, 2.4, 0, Math.PI*2); ctx.fill();
+      // catchlight
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex-1, 3, 1, 0, Math.PI*2); ctx.fill();
+    }
+    // angry red brows (slanted, glowing)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,60,80,0.5)';
+    ctx.lineWidth = 4; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(-10, -1); ctx.lineTo(-1, 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(10, -1); ctx.lineTo(2, 2); ctx.stroke();
-    // Grumpy mouth
-    ctx.strokeStyle='#0a061a'; ctx.lineWidth=1.8;
-    ctx.beginPath(); ctx.moveTo(-3, 12); ctx.quadraticCurveTo(0, 10, 3, 12); ctx.stroke();
-
-    // Tiny feet
-    const legP = Math.sin(e.hop*3)*1.5;
+    ctx.restore();
+    ctx.strokeStyle = '#ff2a50';
+    ctx.lineWidth = 2.3; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-10, -1); ctx.lineTo(-1, 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(10, -1); ctx.lineTo(2, 2); ctx.stroke();
+    // grumpy mouth (fanged)
+    ctx.strokeStyle = '#0a040f'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(-4, 12); ctx.quadraticCurveTo(0, 9, 4, 12); ctx.stroke();
+    // tiny tooth
     ctx.fillStyle = '#ffffff';
-    roundRect(-10, R-4+legP, 8, 5, 2); ctx.fill();
-    roundRect(2, R-4-legP, 8, 5, 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-1.5, 11.5); ctx.lineTo(0, 13.5); ctx.lineTo(1.5, 11.5); ctx.closePath(); ctx.fill();
 
+    // 12. Tiny feet
+    const legP = Math.sin(e.hop*3)*1.5;
+    for(const s of [[-1, C.fuseHole], [1, '#4dd0ff']]){
+      const fx = s[0]>0 ? 2 : -10;
+      const fy = R-4 + s[0]*legP;
+      const fg = ctx.createLinearGradient(fx, fy, fx, fy+5);
+      fg.addColorStop(0, '#ffffff'); fg.addColorStop(1, '#c4cad4');
+      ctx.fillStyle = fg;
+      roundRect(fx, fy, 8, 5, 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,10,0.45)'; ctx.lineWidth = 0.6;
+      roundRect(fx, fy, 8, 5, 2); ctx.stroke();
+      ctx.fillStyle = s[1]; ctx.fillRect(fx, fy+3, 8, 1.8);
+    }
+
+    // 13. Hit flash
+    if(hitFlash > 0){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `rgba(255,255,255,${hitFlash*0.85})`;
+      ctx.beginPath(); ctx.arc(0, 0, R*1.15, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 
-  // -------- ROCKET ALIEN (was 'match') — Tall alien with rocket boost --------
+  // =======================================================================
+  //  ROCKET ALIEN (match) — Astronaut alien with plasma jetpack
+  //  Layers: thruster plasma (3-layer) · metal thruster housing · flight-suit
+  //          with seams · glass helmet with dual spec · alien face · antenna
+  // =======================================================================
   else if(e.kind==='match'){
     ctx.save();
-    const bodyW = 26, bodyH = e.h-22;
-    // shadow
-    ctx.fillStyle='rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(cx, by+e.h-1, 14, 3, 0, 0, Math.PI*2); ctx.fill();
+    const bodyW = 28, bodyH = e.h-22;
+    // float bob
+    const bob = Math.sin(G.t*0.005)*0.6;
 
-    // Rocket flame exhaust beneath
+    // 1. Plasma flame exhaust (3-layer: outer red → mid orange → core white)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const flameLen = 10 + Math.sin(e.hop*6)*3;
-    const fg = ctx.createLinearGradient(cx, by+e.h-14, cx, by+e.h+flameLen);
-    fg.addColorStop(0, 'rgba(255,230,100,0.9)');
-    fg.addColorStop(0.5, 'rgba(255,120,50,0.7)');
-    fg.addColorStop(1, 'rgba(255,80,40,0)');
-    ctx.fillStyle = fg;
+    const fLen = 14 + Math.sin(G.t*0.05)*4 + Math.sin(e.hop*5)*2;
+    // layer 1 outer red wash
+    const f1 = ctx.createLinearGradient(cx, by+e.h-14, cx, by+e.h+fLen);
+    f1.addColorStop(0, 'rgba(255,100,40,0.75)');
+    f1.addColorStop(1, 'rgba(255,50,30,0)');
+    ctx.fillStyle = f1;
     ctx.beginPath();
-    ctx.moveTo(cx-8, by+e.h-14);
-    ctx.quadraticCurveTo(cx, by+e.h+flameLen, cx+8, by+e.h-14);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(cx-10, by+e.h-13);
+    ctx.quadraticCurveTo(cx, by+e.h+fLen*1.1, cx+10, by+e.h-13);
+    ctx.closePath(); ctx.fill();
+    // layer 2 mid yellow
+    const f2 = ctx.createLinearGradient(cx, by+e.h-12, cx, by+e.h+fLen*0.75);
+    f2.addColorStop(0, 'rgba(255,220,100,0.9)');
+    f2.addColorStop(1, 'rgba(255,150,50,0)');
+    ctx.fillStyle = f2;
+    ctx.beginPath();
+    ctx.moveTo(cx-7, by+e.h-13);
+    ctx.quadraticCurveTo(cx, by+e.h+fLen*0.75, cx+7, by+e.h-13);
+    ctx.closePath(); ctx.fill();
+    // layer 3 white-hot core
+    const f3 = ctx.createLinearGradient(cx, by+e.h-12, cx, by+e.h+fLen*0.45);
+    f3.addColorStop(0, 'rgba(255,255,255,1)');
+    f3.addColorStop(1, 'rgba(255,230,160,0)');
+    ctx.fillStyle = f3;
+    ctx.beginPath();
+    ctx.moveTo(cx-3, by+e.h-12);
+    ctx.quadraticCurveTo(cx, by+e.h+fLen*0.45, cx+3, by+e.h-12);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
 
-    // rocket boots / thruster
-    ctx.fillStyle = '#707088';
-    roundRect(cx-10, by+e.h-20, 20, 8, 3); ctx.fill();
-    ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 1;
-    roundRect(cx-10, by+e.h-20, 20, 8, 3); ctx.stroke();
-    // rivets on thruster
-    ctx.fillStyle = '#ffd54a';
-    ctx.beginPath(); ctx.arc(cx-5, by+e.h-16, 1.3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx+5, by+e.h-16, 1.3, 0, Math.PI*2); ctx.fill();
+    // Apply float bob to body
+    const fby = by + bob;
 
-    // Body — green alien teardrop
-    const g = ctx.createRadialGradient(cx-4, by+6, 3, cx, by+bodyH*0.4, bodyW);
-    g.addColorStop(0, '#b8f0b0');
-    g.addColorStop(0.5, '#50c078');
-    g.addColorStop(1, '#185030');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(cx-bodyW/2 + 2, by+e.h-20);
-    ctx.bezierCurveTo(cx-bodyW/2-3, by+bodyH*0.4, cx-bodyW/2+1, by+4, cx, by);
-    ctx.bezierCurveTo(cx+bodyW/2-1, by+4, cx+bodyW/2+3, by+bodyH*0.4, cx+bodyW/2-2, by+e.h-20);
-    ctx.closePath();
-    ctx.fill();
+    // 2. Contact shadow
+    softShadow(cx, by+e.h+2, 16, 0.35);
 
-    // Glass helmet dome on head
-    ctx.save();
-    ctx.globalAlpha = 0.55;
-    const hg = ctx.createRadialGradient(cx-4, by+4, 2, cx, by+10, 14);
-    hg.addColorStop(0, '#ffffff');
-    hg.addColorStop(1, 'rgba(160,220,255,0)');
-    ctx.fillStyle = hg;
-    ctx.beginPath();
-    ctx.ellipse(cx, by+14, 12, 16, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = 'rgba(200,240,255,0.6)';
-    ctx.lineWidth = 1.3;
-    ctx.beginPath();
-    ctx.ellipse(cx, by+14, 12, 16, 0, 0, Math.PI*2);
-    ctx.stroke();
-
-    // Big alien eyes
-    ctx.fillStyle='#fff';
-    ctx.beginPath(); ctx.ellipse(cx-4, by+14, 3.5, 5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx+4, by+14, 3.5, 5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle='#ff4466';
-    ctx.beginPath(); ctx.ellipse(cx-4, by+15, 1.8, 3, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(cx+4, by+15, 1.8, 3, 0, 0, Math.PI*2); ctx.fill();
-
-    // antenna with blinking tip
-    ctx.strokeStyle = '#1a3868'; ctx.lineWidth=2; ctx.lineCap='round';
-    const at = Math.sin(e.hop*2)*2;
-    ctx.beginPath(); ctx.moveTo(cx, by-2); ctx.lineTo(cx+at, by-12); ctx.stroke();
-    ctx.save();
-    ctx.globalCompositeOperation='lighter';
-    const antG = ctx.createRadialGradient(cx+at, by-12, 1, cx+at, by-12, 7);
-    antG.addColorStop(0, 'rgba(255,77,184,0.9)'); antG.addColorStop(1,'rgba(255,77,184,0)');
-    ctx.fillStyle=antG;
-    ctx.beginPath(); ctx.arc(cx+at, by-12, 7, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle='#ff4db8';
-    ctx.beginPath(); ctx.arc(cx+at, by-12, 2.5, 0, Math.PI*2); ctx.fill();
-
-    ctx.restore();
-  }
-
-  // -------- UFO DRONE — hovers in air, stomp from above for big reward --------
-  else if(e.kind==='ufo'){
-    const cx = e.x + e.w/2;
-    const cy = e.y + e.h/2;
-    ctx.save();
-    // Tractor beam (underglow)
-    ctx.globalCompositeOperation='lighter';
-    const beam = ctx.createRadialGradient(cx, cy+16, 4, cx, cy+16, 32);
-    beam.addColorStop(0, 'rgba(255,200,100,0.55)');
-    beam.addColorStop(1, 'rgba(255,200,100,0)');
-    ctx.fillStyle = beam;
-    ctx.beginPath(); ctx.arc(cx, cy+16, 32, 0, Math.PI*2); ctx.fill();
-    ctx.globalCompositeOperation='source-over';
-
-    // Bottom dome
-    ctx.fillStyle = '#3a506a';
-    roundRect(cx-e.w*0.38, cy+4, e.w*0.76, 9, 4); ctx.fill();
-    // Lights ring underneath (blinking)
-    for(let i=0; i<5; i++){
-      const lx = cx - e.w*0.3 + i*(e.w*0.15);
-      const blink = Math.sin(G.t*0.012 + i*1.5) > 0;
-      ctx.fillStyle = blink ? '#ffd54a' : '#803010';
-      ctx.beginPath(); ctx.arc(lx, cy+8, 2.5, 0, Math.PI*2); ctx.fill();
+    // 3. Thruster housing (metallic segmented)
+    const thG = ctx.createLinearGradient(cx, fby+e.h-22, cx, fby+e.h-12);
+    thG.addColorStop(0, '#d0d4dc');
+    thG.addColorStop(0.5, '#7a7e8a');
+    thG.addColorStop(1, '#2a2e3a');
+    ctx.fillStyle = thG;
+    roundRect(cx-11, fby+e.h-22, 22, 10, 3.5); ctx.fill();
+    // thruster seam line
+    ctx.strokeStyle = '#1a1e28'; ctx.lineWidth = 0.8;
+    roundRect(cx-11, fby+e.h-22, 22, 10, 3.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-9, fby+e.h-15); ctx.lineTo(cx+9, fby+e.h-15); ctx.stroke();
+    // glowing rivets
+    for(const rx of [-6, 0, 6]){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const rg = ctx.createRadialGradient(cx+rx, fby+e.h-18, 0, cx+rx, fby+e.h-18, 4);
+      rg.addColorStop(0, 'rgba(255,210,80,0.8)');
+      rg.addColorStop(1, 'rgba(255,150,20,0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(cx+rx, fby+e.h-18, 4, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#ffe080';
+      ctx.beginPath(); ctx.arc(cx+rx, fby+e.h-18, 1.4, 0, Math.PI*2); ctx.fill();
     }
-    // Metallic ring body
-    const bg = ctx.createLinearGradient(cx, cy-6, cx, cy+6);
-    bg.addColorStop(0, '#e0f0ff');
-    bg.addColorStop(0.5, '#a0bac8');
-    bg.addColorStop(1, '#3a506a');
-    ctx.fillStyle = bg;
-    roundRect(cx-e.w*0.48, cy-6, e.w*0.96, 14, 7); ctx.fill();
-    // Glass dome
+
+    // 4. Flight suit body (teardrop with seams)
+    const suitG = ctx.createRadialGradient(cx-5, fby+8, 3, cx, fby+bodyH*0.5, bodyW);
+    suitG.addColorStop(0,    '#d0ffd0');
+    suitG.addColorStop(0.25, '#72d494');
+    suitG.addColorStop(0.65, '#2e8a50');
+    suitG.addColorStop(1,    '#0c3020');
+    ctx.fillStyle = suitG;
+    ctx.beginPath();
+    ctx.moveTo(cx-bodyW/2+2, fby+e.h-22);
+    ctx.bezierCurveTo(cx-bodyW/2-3, fby+bodyH*0.45, cx-bodyW/2+2, fby+5, cx, fby);
+    ctx.bezierCurveTo(cx+bodyW/2-2, fby+5, cx+bodyW/2+3, fby+bodyH*0.45, cx+bodyW/2-2, fby+e.h-22);
+    ctx.closePath();
+    ctx.fill();
+    // suit outline
+    ctx.strokeStyle = 'rgba(10,30,20,0.8)';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    // chest seam
+    ctx.strokeStyle = 'rgba(20,60,40,0.5)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(cx, fby+14);
+    ctx.lineTo(cx, fby+e.h-23);
+    ctx.stroke();
+    // chest tech light
     ctx.save();
-    ctx.globalAlpha = 0.7;
-    const dg = ctx.createRadialGradient(cx-5, cy-12, 1, cx, cy-8, 16);
-    dg.addColorStop(0, 'rgba(255,255,255,0.95)');
-    dg.addColorStop(1, 'rgba(100,180,230,0.3)');
-    ctx.fillStyle = dg;
-    ctx.beginPath(); ctx.ellipse(cx, cy-6, 13, 11, 0, Math.PI, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation='lighter';
+    const cg = ctx.createRadialGradient(cx, fby+bodyH*0.55, 0, cx, fby+bodyH*0.55, 6);
+    cg.addColorStop(0, 'rgba(120,255,180,0.9)');
+    cg.addColorStop(1, 'rgba(40,220,120,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(cx, fby+bodyH*0.55, 6, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    ctx.strokeStyle = 'rgba(200,230,255,0.6)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.ellipse(cx, cy-6, 13, 11, 0, Math.PI, Math.PI*2); ctx.stroke();
-    // Alien pilot inside
-    ctx.fillStyle = '#90e070';
-    ctx.beginPath(); ctx.ellipse(cx, cy-10, 5, 5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#1a2547';
-    ctx.beginPath(); ctx.arc(cx-2, cy-10, 1.3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx+2, cy-10, 1.3, 0, Math.PI*2); ctx.fill();
-    // Tiny antenna
-    ctx.strokeStyle = '#1a3868'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(cx, cy-14); ctx.lineTo(cx, cy-19); ctx.stroke();
-    ctx.fillStyle = '#ff4db8';
-    ctx.beginPath(); ctx.arc(cx, cy-19, 1.8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#d0ffe0';
+    ctx.beginPath(); ctx.arc(cx, fby+bodyH*0.55, 1.4, 0, Math.PI*2); ctx.fill();
+
+    // 5. Suit side lights (shoulder pads)
+    for(const sx of [-bodyW/2+2, bodyW/2-2]){
+      ctx.fillStyle = '#ff4db8';
+      ctx.beginPath(); ctx.arc(cx+sx, fby+16, 1.8, 0, Math.PI*2); ctx.fill();
+    }
+
+    // 6. Glass helmet — dome with dual specular + refractive shine
+    ctx.save();
+    // glass tint fill
+    const glG = ctx.createRadialGradient(cx-3, fby+8, 2, cx, fby+14, 16);
+    glG.addColorStop(0, 'rgba(240,255,255,0.55)');
+    glG.addColorStop(0.5, 'rgba(180,220,255,0.25)');
+    glG.addColorStop(1, 'rgba(120,170,220,0.12)');
+    ctx.fillStyle = glG;
+    ctx.beginPath(); ctx.ellipse(cx, fby+14, 13, 17, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // helmet rim (chrome)
+    ctx.strokeStyle = 'rgba(200,240,255,0.85)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.ellipse(cx, fby+14, 13, 17, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(40,80,120,0.4)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.ellipse(cx, fby+14, 12.2, 16.2, 0, 0, Math.PI*2); ctx.stroke();
+    // primary specular arc
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.ellipse(cx-5, fby+10, 5, 9, -0.3, Math.PI*0.9, Math.PI*1.55); ctx.stroke();
+    // tiny secondary shine
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(cx+6, fby+8, 1.4, 0, Math.PI*2); ctx.fill();
+
+    // 7. Alien face inside helmet
+    // big eyes with iris ring
+    for(const side of [-1, 1]){
+      const ex = cx + side*4;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(ex, fby+14, 3.6, 5.2, 0, 0, Math.PI*2); ctx.fill();
+      // iris ring (red-magenta)
+      const ig = ctx.createRadialGradient(ex, fby+14, 0, ex, fby+14, 3);
+      ig.addColorStop(0, '#ff8a7a');
+      ig.addColorStop(0.6, '#ff3350');
+      ig.addColorStop(1, '#7a0a20');
+      ctx.fillStyle = ig;
+      ctx.beginPath(); ctx.ellipse(ex, fby+15, 2, 3.2, 0, 0, Math.PI*2); ctx.fill();
+      // catchlight
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex-0.8, fby+13.5, 0.9, 0, Math.PI*2); ctx.fill();
+    }
+    // tiny nostrils
+    ctx.fillStyle = 'rgba(20,60,40,0.6)';
+    ctx.beginPath(); ctx.arc(cx-1, fby+20, 0.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+1, fby+20, 0.5, 0, Math.PI*2); ctx.fill();
+
+    // 8. Antenna with LED tip
+    const at = Math.sin(G.t*0.005)*1.5;
+    ctx.strokeStyle = '#1a3868'; ctx.lineWidth = 2.2; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(cx, fby-2); ctx.lineTo(cx+at, fby-14); ctx.stroke();
+    // LED glow
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const ledG = ctx.createRadialGradient(cx+at, fby-14, 0, cx+at, fby-14, 9);
+    ledG.addColorStop(0, 'rgba(255,140,220,1)');
+    ledG.addColorStop(0.4, 'rgba(255,77,184,0.7)');
+    ledG.addColorStop(1, 'rgba(255,77,184,0)');
+    ctx.fillStyle = ledG;
+    ctx.beginPath(); ctx.arc(cx+at, fby-14, 9, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // LED core
+    const ledC = ctx.createRadialGradient(cx+at-1, fby-15, 0, cx+at, fby-14, 3);
+    ledC.addColorStop(0, '#ffffff');
+    ledC.addColorStop(0.6, '#ffb8e0');
+    ledC.addColorStop(1, '#c03080');
+    ctx.fillStyle = ledC;
+    ctx.beginPath(); ctx.arc(cx+at, fby-14, 3, 0, Math.PI*2); ctx.fill();
+
+    // 9. Hit flash
+    if(hitFlash > 0){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `rgba(255,255,255,${hitFlash*0.7})`;
+      ctx.beginPath();
+      ctx.ellipse(cx, fby+e.h*0.5, bodyW*0.7, e.h*0.6, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
-  // -------- ASTEROID SPINY (was 'spikehead') — Mario Spiny in space --------
+
+  // =======================================================================
+  //  UFO DRONE — chrome saucer with rotating underlights + volumetric beam
+  //  Layers: rotating beam · chromed ring hull · rotating LED sequence ·
+  //          dome glass with fresnel · alien pilot with glowing eyes · antenna
+  // =======================================================================
+  else if(e.kind==='ufo'){
+    const uCx = e.x + e.w/2;
+    const uCy = e.y + e.h/2;
+    ctx.save();
+    // tilt slightly based on movement
+    const tilt = Math.sin(G.t*0.003)*0.06;
+    ctx.translate(uCx, uCy);
+    ctx.rotate(tilt);
+
+    // 1. Volumetric tractor beam (animated cone with scanning particles)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    // outer cone
+    const beamLen = 40;
+    const bg = ctx.createLinearGradient(0, 4, 0, 4+beamLen);
+    bg.addColorStop(0, 'rgba(255,220,120,0.55)');
+    bg.addColorStop(0.5, 'rgba(255,180,80,0.22)');
+    bg.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(-e.w*0.22, 6);
+    ctx.lineTo(-e.w*0.42, 4+beamLen);
+    ctx.lineTo(e.w*0.42, 4+beamLen);
+    ctx.lineTo(e.w*0.22, 6);
+    ctx.closePath(); ctx.fill();
+    // scanning stripe inside beam
+    const scanY = (G.t*0.08) % beamLen;
+    ctx.fillStyle = 'rgba(255,255,200,0.45)';
+    ctx.beginPath();
+    const scanLW = e.w*0.22 + (e.w*0.2)*(scanY/beamLen);
+    ctx.moveTo(-scanLW, 6+scanY);
+    ctx.lineTo(scanLW, 6+scanY);
+    ctx.lineTo(scanLW*0.94, 6+scanY+2);
+    ctx.lineTo(-scanLW*0.94, 6+scanY+2);
+    ctx.closePath(); ctx.fill();
+    // beam source hotspot
+    const bh = ctx.createRadialGradient(0, 6, 0, 0, 6, 18);
+    bh.addColorStop(0, 'rgba(255,240,180,0.9)');
+    bh.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = bh;
+    ctx.beginPath(); ctx.arc(0, 6, 18, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 2. Contact shadow on ground (faint, far below)
+    // (skipped — UFO is airborne, beam serves as shadow)
+
+    // 3. Bottom plate (underside, dark metal)
+    const bpG = ctx.createLinearGradient(0, 4, 0, 13);
+    bpG.addColorStop(0, '#2a3442');
+    bpG.addColorStop(1, '#10161e');
+    ctx.fillStyle = bpG;
+    roundRect(-e.w*0.36, 4, e.w*0.72, 9, 4); ctx.fill();
+    ctx.strokeStyle = '#050a12'; ctx.lineWidth = 1;
+    roundRect(-e.w*0.36, 4, e.w*0.72, 9, 4); ctx.stroke();
+
+    // 4. Rotating LED sequence underneath (5 lights, sequential)
+    const seqPhase = (G.t*0.012) % 5;
+    for(let i=0; i<5; i++){
+      const lx = -e.w*0.28 + i*(e.w*0.14);
+      const ly = 8;
+      const active = Math.abs(((seqPhase - i + 2.5) % 5) - 2.5) < 1.2;
+      const intensity = active ? 1 : 0.15;
+      // glow
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
+      lg.addColorStop(0, `rgba(255,220,100,${0.9*intensity})`);
+      lg.addColorStop(1, 'rgba(255,150,20,0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath(); ctx.arc(lx, ly, 5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      // core
+      ctx.fillStyle = active ? '#fff2b0' : '#604020';
+      ctx.beginPath(); ctx.arc(lx, ly, 1.8, 0, Math.PI*2); ctx.fill();
+    }
+
+    // 5. Ring hull — chrome metal with horizontal bands
+    const ringG = ctx.createLinearGradient(0, -7, 0, 7);
+    ringG.addColorStop(0,    '#f4f8ff');
+    ringG.addColorStop(0.25, '#c8d4e0');
+    ringG.addColorStop(0.55, '#586a7e');
+    ringG.addColorStop(0.8,  '#30404e');
+    ringG.addColorStop(1,    '#1a222c');
+    ctx.fillStyle = ringG;
+    roundRect(-e.w*0.48, -7, e.w*0.96, 14, 7); ctx.fill();
+    // ring edge
+    ctx.strokeStyle = '#0a101a'; ctx.lineWidth = 1;
+    roundRect(-e.w*0.48, -7, e.w*0.96, 14, 7); ctx.stroke();
+    // band seam
+    ctx.strokeStyle = 'rgba(40,60,80,0.6)'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.moveTo(-e.w*0.46, 0); ctx.lineTo(e.w*0.46, 0); ctx.stroke();
+    // bright specular streak on top
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.moveTo(-e.w*0.35, -5.5);
+    ctx.lineTo(e.w*0.35, -5.5);
+    ctx.lineTo(e.w*0.33, -4.2);
+    ctx.lineTo(-e.w*0.33, -4.2);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // 6. Glass dome — two-layer with fresnel rim
+    // shadow under dome (base)
+    ctx.fillStyle = 'rgba(10,20,40,0.4)';
+    ctx.beginPath(); ctx.ellipse(0, -6.5, 14, 2, 0, 0, Math.PI*2); ctx.fill();
+    // dome glass body
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 14, 12, 0, Math.PI, Math.PI*2);
+    ctx.closePath();
+    ctx.clip();
+    // tinted interior
+    const dInt = ctx.createRadialGradient(0, -4, 2, 0, -6, 14);
+    dInt.addColorStop(0, 'rgba(200,240,255,0.65)');
+    dInt.addColorStop(0.7, 'rgba(80,140,200,0.4)');
+    dInt.addColorStop(1, 'rgba(40,80,140,0.2)');
+    ctx.fillStyle = dInt;
+    ctx.fillRect(-14, -18, 28, 14);
+    // strong top-left spec
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.ellipse(-5, -12, 4, 6, -0.3, 0, Math.PI*2); ctx.fill();
+    // secondary spec
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath(); ctx.arc(5, -10, 1.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // dome rim (chrome)
+    ctx.strokeStyle = 'rgba(200,230,255,0.85)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.ellipse(0, -6, 14, 12, 0, Math.PI, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(40,60,90,0.5)'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.ellipse(0, -6, 13, 11, 0, Math.PI, Math.PI*2); ctx.stroke();
+
+    // 7. Alien pilot inside — green with glowing eyes
+    const plG = ctx.createRadialGradient(-1, -11, 1, 0, -9, 5.5);
+    plG.addColorStop(0, '#c4ff90');
+    plG.addColorStop(0.5, '#6ed060');
+    plG.addColorStop(1, '#1e5020');
+    ctx.fillStyle = plG;
+    ctx.beginPath(); ctx.ellipse(0, -10, 5, 5, 0, 0, Math.PI*2); ctx.fill();
+    // eyes glow
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(const side of [-1, 1]){
+      const eg = ctx.createRadialGradient(side*2, -10, 0, side*2, -10, 3);
+      eg.addColorStop(0, 'rgba(255,120,220,0.8)');
+      eg.addColorStop(1, 'rgba(255,77,184,0)');
+      ctx.fillStyle = eg;
+      ctx.beginPath(); ctx.arc(side*2, -10, 3, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = '#ff4db8';
+    ctx.beginPath(); ctx.arc(-2, -10, 1.2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, -10, 1.2, 0, Math.PI*2); ctx.fill();
+    // eye catchlights
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-2.3, -10.3, 0.5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(1.7, -10.3, 0.5, 0, Math.PI*2); ctx.fill();
+
+    // 8. Antenna beacon on top
+    ctx.strokeStyle = '#1a2838'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(0, -22); ctx.stroke();
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const ag = ctx.createRadialGradient(0, -22, 0, 0, -22, 8);
+    ag.addColorStop(0, 'rgba(100,220,255,1)');
+    ag.addColorStop(0.4, 'rgba(77,208,255,0.6)');
+    ag.addColorStop(1, 'rgba(77,208,255,0)');
+    ctx.fillStyle = ag;
+    ctx.beginPath(); ctx.arc(0, -22, 8, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    const acore = ctx.createRadialGradient(-0.5, -22.5, 0, 0, -22, 2.3);
+    acore.addColorStop(0, '#fff');
+    acore.addColorStop(0.5, '#a8e9ff');
+    acore.addColorStop(1, '#2080c8');
+    ctx.fillStyle = acore;
+    ctx.beginPath(); ctx.arc(0, -22, 2.3, 0, Math.PI*2); ctx.fill();
+
+    // 9. Hit flash
+    if(hitFlash > 0){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `rgba(255,255,255,${hitFlash*0.75})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, e.w*0.55, e.h*0.65, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // =======================================================================
+  //  ASTEROID SPINY — rocky boss-lite with magma veins and spinning spikes
+  //  Layers: pulsing danger aura · shadow · spinning metallic spikes ·
+  //          lumpy rock body · glowing magma cracks · craters · angry face
+  // =======================================================================
   else if(e.kind==='spikehead'){
     ctx.save();
     const acx = cx, acy = by + e.h/2;
-    // danger aura
+
+    // 1. Pulsing danger aura (red)
+    const auraPulse = 0.75 + Math.sin(G.t*0.006)*0.25;
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const aura = ctx.createRadialGradient(acx, acy, 4, acx, acy, 50);
-    aura.addColorStop(0, 'rgba(255,40,40,0.4)');
-    aura.addColorStop(1, 'rgba(255,40,40,0)');
+    const aura = ctx.createRadialGradient(acx, acy, 4, acx, acy, 58);
+    aura.addColorStop(0, `rgba(255,60,40,${0.48*auraPulse})`);
+    aura.addColorStop(0.5, `rgba(255,40,20,${0.22*auraPulse})`);
+    aura.addColorStop(1, 'rgba(255,40,20,0)');
     ctx.fillStyle=aura;
-    ctx.beginPath(); ctx.arc(acx, acy, 50, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(acx, acy, 58, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // shadow
-    ctx.fillStyle='rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(acx, by+e.h, 16, 3, 0, 0, Math.PI*2); ctx.fill();
 
-    // outer sharp spikes (red glowing)
+    // 2. Contact shadow
+    softShadow(acx, by+e.h, 18, 0.5);
+
     ctx.save();
     ctx.translate(acx, acy);
+
+    // 3. Spinning metallic spikes (behind body)
+    const rotSpin = G.t*0.004;
     const spikes = 10;
-    const baseR = e.w*0.38, tipR = e.w*0.6;
-    // draw spikes first (behind body)
+    const baseR = e.w*0.38, tipR = e.w*0.62;
     for(let i=0; i<spikes; i++) {
-      const a = (i/spikes) * Math.PI*2 + e.hop*0.05;
-      const x1 = Math.cos(a - 0.16)*baseR;
-      const y1 = Math.sin(a - 0.16)*baseR;
-      const x2 = Math.cos(a + 0.16)*baseR;
-      const y2 = Math.sin(a + 0.16)*baseR;
+      const a = (i/spikes) * Math.PI*2 + rotSpin;
+      const x1 = Math.cos(a - 0.18)*baseR;
+      const y1 = Math.sin(a - 0.18)*baseR;
+      const x2 = Math.cos(a + 0.18)*baseR;
+      const y2 = Math.sin(a + 0.18)*baseR;
       const tx = Math.cos(a)*tipR;
       const ty = Math.sin(a)*tipR;
+      // spike gradient (metal with red-hot tip)
       const sg = ctx.createLinearGradient(0, 0, tx, ty);
-      sg.addColorStop(0, '#ff8a40');
-      sg.addColorStop(1, '#ff2020');
+      sg.addColorStop(0, '#e0b890');
+      sg.addColorStop(0.5, '#a05028');
+      sg.addColorStop(0.85, '#ff5020');
+      sg.addColorStop(1, '#fff4a0');
       ctx.fillStyle = sg;
-      ctx.strokeStyle = '#7a1010';
-      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(tx, ty);
       ctx.lineTo(x2, y2);
       ctx.closePath();
-      ctx.fill(); ctx.stroke();
+      ctx.fill();
+      // spike dark outline
+      ctx.strokeStyle = '#2a0a08'; ctx.lineWidth = 1;
+      ctx.stroke();
+      // spike highlight (glossy line on one side)
+      ctx.strokeStyle = 'rgba(255,240,200,0.7)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(x1 + (tx-x1)*0.15, y1 + (ty-y1)*0.15);
+      ctx.lineTo(tx*0.92, ty*0.92);
+      ctx.stroke();
+      // hot tip glow
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const tg = ctx.createRadialGradient(tx, ty, 0, tx, ty, 5);
+      tg.addColorStop(0, 'rgba(255,220,120,0.9)');
+      tg.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = tg;
+      ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
     }
 
-    // rocky body (asteroid lumpy)
-    const bg = ctx.createRadialGradient(-5, -5, 2, 0, 0, e.w*0.45);
-    bg.addColorStop(0, '#5a3a3a');
-    bg.addColorStop(0.6, '#2a1515');
-    bg.addColorStop(1, '#0f0505');
-    ctx.fillStyle = bg;
+    // 4. Lumpy rock body (irregular polygon with proper gradient)
+    const rockG = ctx.createRadialGradient(-e.w*0.18, -e.w*0.2, e.w*0.05, 0, 0, e.w*0.48);
+    rockG.addColorStop(0,    '#8a5a48');
+    rockG.addColorStop(0.35, '#5a2e22');
+    rockG.addColorStop(0.7,  '#2c1208');
+    rockG.addColorStop(1,    '#0c0404');
+    ctx.fillStyle = rockG;
     ctx.beginPath();
-    // irregular lumpy circle
-    const points = 12;
-    for(let i=0; i<=points; i++) {
-      const a = (i/points) * Math.PI*2;
-      const r = e.w*0.37 + Math.sin(i*2.1+e.hop*0.3)*2;
+    const pts = 14;
+    const seed = e.hop*0.15;
+    for(let i=0; i<=pts; i++) {
+      const a = (i/pts) * Math.PI*2;
+      const r = e.w*0.37 + Math.sin(i*2.1+seed)*2.4 + Math.cos(i*3.3-seed)*1.5;
       const px = Math.cos(a)*r, py = Math.sin(a)*r;
       if(i===0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
     ctx.fill();
-    // craters / darker spots
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.arc(-8, 4, 3, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(7, -6, 2, 0, Math.PI*2); ctx.fill();
+    // rock outline
+    ctx.strokeStyle = '#0a0302'; ctx.lineWidth = 1.2;
+    ctx.stroke();
 
-    // angry red eyes
-    ctx.fillStyle='#fff';
-    ctx.beginPath(); ctx.arc(-6, -1, 5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6, -1, 5, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle='#ff1010';
-    ctx.beginPath(); ctx.arc(-5, 0, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(7, 0, 2.5, 0, Math.PI*2); ctx.fill();
-    // angry brows (yellow/orange)
-    ctx.strokeStyle='#ffb347'; ctx.lineWidth=2.5; ctx.lineCap='round';
-    ctx.beginPath(); ctx.moveTo(-11, -7); ctx.lineTo(-3, -3); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(11, -7); ctx.lineTo(3, -3); ctx.stroke();
-    // sharp teeth grin
-    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.moveTo(-5, 8); ctx.lineTo(-3, 12); ctx.lineTo(-1, 8); ctx.lineTo(1, 12); ctx.lineTo(3, 8); ctx.lineTo(5, 12); ctx.stroke();
-
+    // 5. Magma crack veins (glowing orange across rock body)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,140,40,0.85)'; ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    // vein 1 (left-top to center)
+    ctx.beginPath();
+    ctx.moveTo(-e.w*0.28, -e.w*0.1);
+    ctx.lineTo(-e.w*0.12, -e.w*0.05);
+    ctx.lineTo(-e.w*0.04, -e.w*0.18);
+    ctx.stroke();
+    // vein 2 (right to bottom)
+    ctx.beginPath();
+    ctx.moveTo(e.w*0.22, -e.w*0.16);
+    ctx.lineTo(e.w*0.14, e.w*0.02);
+    ctx.lineTo(e.w*0.20, e.w*0.18);
+    ctx.stroke();
+    // vein 3 (small branch)
+    ctx.strokeStyle = 'rgba(255,200,80,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-e.w*0.08, e.w*0.1);
+    ctx.lineTo(-e.w*0.18, e.w*0.2);
+    ctx.stroke();
+    // pulsing hot spots on vein junctions
+    const pulse = 0.6 + Math.sin(G.t*0.015)*0.4;
+    for(const pt of [[-e.w*0.12, -e.w*0.05], [e.w*0.14, e.w*0.02], [-e.w*0.04, -e.w*0.18]]){
+      const hg = ctx.createRadialGradient(pt[0], pt[1], 0, pt[0], pt[1], 5);
+      hg.addColorStop(0, `rgba(255,240,180,${pulse})`);
+      hg.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = hg;
+      ctx.beginPath(); ctx.arc(pt[0], pt[1], 5, 0, Math.PI*2); ctx.fill();
+    }
     ctx.restore();
+
+    // 6. Craters (small recessed circles)
+    for(const cr of [[-8, 4, 3.2], [7, -6, 2.4], [-4, -9, 1.8]]){
+      const [cxr, cyr, rr] = cr;
+      // dark bowl
+      const crG = ctx.createRadialGradient(cxr, cyr-0.5, 0, cxr, cyr, rr);
+      crG.addColorStop(0, 'rgba(0,0,0,0.6)');
+      crG.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = crG;
+      ctx.beginPath(); ctx.arc(cxr, cyr, rr, 0, Math.PI*2); ctx.fill();
+      // rim highlight
+      ctx.strokeStyle = 'rgba(180,120,80,0.5)'; ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.arc(cxr, cyr, rr, -Math.PI*0.4, Math.PI*0.6); ctx.stroke();
+    }
+
+    // 7. Angry glowing eyes (intense red with iris)
+    for(const side of [-1, 1]){
+      const ex = side*6;
+      // eye socket shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.arc(ex, -1, 5.3, 0, Math.PI*2); ctx.fill();
+      // white
+      ctx.fillStyle = '#fff4dc';
+      ctx.beginPath(); ctx.arc(ex, -1, 5, 0, Math.PI*2); ctx.fill();
+      // glowing red iris
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const eyG = ctx.createRadialGradient(ex, 0, 0, ex, 0, 3.5);
+      eyG.addColorStop(0, 'rgba(255,220,80,0.9)');
+      eyG.addColorStop(0.4, 'rgba(255,60,40,0.8)');
+      eyG.addColorStop(1, 'rgba(200,20,20,0)');
+      ctx.fillStyle = eyG;
+      ctx.beginPath(); ctx.arc(ex, 0, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      const pupG = ctx.createRadialGradient(ex-0.8, -0.8, 0, ex, 0, 2.6);
+      pupG.addColorStop(0, '#ff8040');
+      pupG.addColorStop(0.5, '#ff2020');
+      pupG.addColorStop(1, '#600808');
+      ctx.fillStyle = pupG;
+      ctx.beginPath(); ctx.arc(ex+(side>0?1:-1), 0, 2.6, 0, Math.PI*2); ctx.fill();
+      // catchlight
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex-1.2, -1.2, 0.9, 0, Math.PI*2); ctx.fill();
+    }
+
+    // 8. Angry brows (glowing yellow-orange, bold)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,180,60,0.6)';
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-12, -7); ctx.lineTo(-2, -3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12, -7); ctx.lineTo(2, -3); ctx.stroke();
+    ctx.restore();
+    ctx.strokeStyle = '#ffb347'; ctx.lineWidth = 2.8; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-12, -7); ctx.lineTo(-2, -3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12, -7); ctx.lineTo(2, -3); ctx.stroke();
+
+    // 9. Sharp teeth grin
+    ctx.fillStyle = '#fff8e0';
+    ctx.strokeStyle = '#3a1008'; ctx.lineWidth = 0.6;
+    const teeth = [[-5,8],[-2.5,10.5],[0,8],[2.5,10.5],[5,8]];
+    for(let i=0; i<teeth.length-1; i++){
+      ctx.beginPath();
+      ctx.moveTo(teeth[i][0], teeth[i][1]);
+      ctx.lineTo((teeth[i][0]+teeth[i+1][0])/2, (teeth[i][1]+teeth[i+1][1])/2 + 2);
+      ctx.lineTo(teeth[i+1][0], teeth[i+1][1]);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+
+    ctx.restore(); // end translate
+
+    // 10. Hit flash
+    if(hitFlash > 0){
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `rgba(255,255,255,${hitFlash*0.8})`;
+      ctx.beginPath(); ctx.arc(acx, acy, e.w*0.52, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
     ctx.restore();
   }
 }
