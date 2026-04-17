@@ -118,6 +118,41 @@ const bloomCanvas = document.createElement('canvas');
 bloomCanvas.width = Math.floor(W * 0.5);
 bloomCanvas.height = Math.floor(H * 0.5);
 const bloomCtx = bloomCanvas.getContext('2d');
+
+// Shield hex-mesh pre-rendered tile cache (one per color state)
+// Rebuilt only when shield color changes (3 charges / 2 charges / 1 charge)
+const SHIELD_HEX_CACHE = {};
+const SHIELD_HEX_SIZE = 11;
+const SHIELD_HEX_ROW = SHIELD_HEX_SIZE * 1.5;
+const SHIELD_HEX_COL = SHIELD_HEX_SIZE * Math.sqrt(3);
+function getShieldHexTile(hexColor){
+  if(SHIELD_HEX_CACHE[hexColor]) return SHIELD_HEX_CACHE[hexColor];
+  // Tileable unit: 1 col wide, 2 rows tall (stagger happens between rows via column parity)
+  const tileW = Math.ceil(SHIELD_HEX_COL * 2);
+  const tileH = Math.ceil(SHIELD_HEX_ROW * 2);
+  const tc = document.createElement('canvas');
+  tc.width = tileW; tc.height = tileH;
+  const tctx = tc.getContext('2d');
+  tctx.strokeStyle = hexColor;
+  tctx.lineWidth = 1;
+  // Draw 2x2 hexagons with proper stagger so tiling seamless
+  for(let row=-1; row<=2; row++){
+    for(let col=-1; col<=2; col++){
+      const hx = col * SHIELD_HEX_COL;
+      const hy = row * SHIELD_HEX_ROW + (col%2===0 ? 0 : SHIELD_HEX_ROW*0.5);
+      tctx.beginPath();
+      for(let k=0; k<6; k++){
+        const a = (k/6)*Math.PI*2 + Math.PI/6;
+        const px = hx + Math.cos(a)*SHIELD_HEX_SIZE;
+        const py = hy + Math.sin(a)*SHIELD_HEX_SIZE;
+        if(k===0) tctx.moveTo(px, py); else tctx.lineTo(px, py);
+      }
+      tctx.closePath(); tctx.stroke();
+    }
+  }
+  SHIELD_HEX_CACHE[hexColor] = tc;
+  return tc;
+}
 let BLOOM_ENABLED = true;
 function applyBloom(){
   if(!BLOOM_ENABLED) return;
@@ -140,33 +175,42 @@ function applyBloom(){
   }
 }
 
-// Chromatic aberration — subtle colored vignette for cinematic edge feel (more vivid magenta/cyan)
+// Chromatic aberration — pre-built gradient cached once (was: 2 gradients re-created per frame)
+let _chromaticMagenta = null;
+let _chromaticCyan = null;
+function _initChromaticGradients(){
+  try {
+    _chromaticMagenta = ctx.createRadialGradient(W/2, H/2, W*0.3, W/2, H/2, W*0.78);
+    _chromaticMagenta.addColorStop(0, 'rgba(255,60,180,0)');
+    _chromaticMagenta.addColorStop(1, 'rgba(255,30,170,0.14)');
+    _chromaticCyan = ctx.createRadialGradient(W/2, H/2, W*0.3, W/2, H/2, W*0.78);
+    _chromaticCyan.addColorStop(0, 'rgba(60,200,255,0)');
+    _chromaticCyan.addColorStop(1, 'rgba(30,180,255,0.11)');
+  } catch(e){}
+}
 function applyChromatic(){
+  if(!_chromaticMagenta) _initChromaticGradients();
+  if(!_chromaticMagenta) return;
   try {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    const vg = ctx.createRadialGradient(W/2, H/2, W*0.3, W/2, H/2, W*0.78);
-    vg.addColorStop(0, 'rgba(255,60,180,0)');
-    vg.addColorStop(1, 'rgba(255,30,170,0.14)');
-    ctx.fillStyle = vg;
+    ctx.fillStyle = _chromaticMagenta;
     ctx.fillRect(0, 0, W, H);
-    const vg2 = ctx.createRadialGradient(W/2, H/2, W*0.3, W/2, H/2, W*0.78);
-    vg2.addColorStop(0, 'rgba(60,200,255,0)');
-    vg2.addColorStop(1, 'rgba(30,180,255,0.11)');
-    ctx.fillStyle = vg2;
+    ctx.fillStyle = _chromaticCyan;
     ctx.fillRect(0, 0, W, H);
     ctx.restore();
   } catch(e){}
 }
 
-// Film grain — pre-generated noise texture tiled with random offset per frame
+// Film grain — pre-generated noise texture, BIG tile (512×512) → only 2-4 drawImages/frame
 let grainTex = null;
+const GRAIN_TILE_SZ = 512;
 function ensureGrainTex(){
   if(grainTex) return grainTex;
   const gc = document.createElement('canvas');
-  gc.width = 128; gc.height = 128;
+  gc.width = GRAIN_TILE_SZ; gc.height = GRAIN_TILE_SZ;
   const gctx = gc.getContext('2d');
-  const img = gctx.createImageData(128, 128);
+  const img = gctx.createImageData(GRAIN_TILE_SZ, GRAIN_TILE_SZ);
   for(let i=0;i<img.data.length;i+=4){
     const v = (Math.random()*255)|0;
     img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v;
@@ -182,10 +226,11 @@ function applyFilmGrain(){
     ctx.save();
     ctx.globalCompositeOperation = 'overlay';
     ctx.globalAlpha = 0.038;
-    const ox = -Math.floor(Math.random()*128);
-    const oy = -Math.floor(Math.random()*128);
-    for(let y=oy; y<H; y+=128){
-      for(let x=ox; x<W; x+=128){
+    // Random offset within tile (smaller draw count since tile is big)
+    const ox = -Math.floor(Math.random()*GRAIN_TILE_SZ*0.5);
+    const oy = -Math.floor(Math.random()*GRAIN_TILE_SZ*0.5);
+    for(let y=oy; y<H; y+=GRAIN_TILE_SZ){
+      for(let x=ox; x<W; x+=GRAIN_TILE_SZ){
         ctx.drawImage(tex, x, y);
       }
     }
@@ -1134,16 +1179,15 @@ function drawAmbient(){
       ctx.beginPath(); ctx.arc(0,0,p.size*0.3,0,Math.PI*2); ctx.fill();
     }
     else if(p.type==='ember'){
+      // Replaced gradient with 2 concentric additive circles (no alloc per frame)
       ctx.globalCompositeOperation='lighter';
       const pulse = 0.7 + Math.sin(p.phase)*0.3;
       const r = p.size * pulse;
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*3);
-      g.addColorStop(0, `rgba(255,200,80,${a*0.9})`);
-      g.addColorStop(0.5, `rgba(255,120,40,${a*0.5})`);
-      g.addColorStop(1, 'rgba(255,80,20,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*2.5, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = `rgba(255,240,180,${a})`;
+      ctx.fillStyle = `rgba(255,120,40,${(a*0.45).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*2.2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,180,60,${(a*0.8).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.1, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,240,180,${a.toFixed(2)})`;
       ctx.beginPath(); ctx.arc(p.x, p.y, r*0.45, 0, Math.PI*2); ctx.fill();
     }
     else if(p.type==='acid'){
@@ -1153,13 +1197,12 @@ function drawAmbient(){
       ctx.beginPath();
       ctx.ellipse(p.x, p.y, p.size*0.7, p.size*1.3, 0, 0, Math.PI*2);
       ctx.fill();
-      // glow
+      // 2-layer glow (no gradient)
       ctx.globalCompositeOperation='lighter';
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*2);
-      g.addColorStop(0, `rgba(180,255,100,${a*0.6})`);
-      g.addColorStop(1, 'rgba(180,255,100,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(180,255,100,${(a*0.3).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*1.8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(180,255,100,${(a*0.5).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*0.9, 0, Math.PI*2); ctx.fill();
       // highlight
       ctx.globalCompositeOperation='source-over';
       ctx.fillStyle = `rgba(255,255,255,${a*0.8})`;
@@ -1174,13 +1217,13 @@ function drawAmbient(){
       ctx.beginPath(); ctx.arc(p.x-p.size*0.3, p.y-p.size*0.3, p.size*0.25, 0, Math.PI*2); ctx.fill();
     }
     else if(p.type==='void'){
+      // Layered wisp without gradient alloc (2 concentric ellipses)
       ctx.globalCompositeOperation='lighter';
       ctx.globalAlpha = a*0.5;
-      const wisp = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*4);
-      wisp.addColorStop(0, 'rgba(220,200,255,0.4)');
-      wisp.addColorStop(1, 'rgba(180,160,220,0)');
-      ctx.fillStyle = wisp;
+      ctx.fillStyle = 'rgba(220,200,255,0.2)';
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size*4, p.size*1.5, Math.sin(p.phase)*0.4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(220,200,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size*2.2, p.size*0.8, Math.sin(p.phase)*0.4, 0, Math.PI*2); ctx.fill();
     }
     else if(p.type==='neon'){
       ctx.globalCompositeOperation='lighter';
@@ -1204,13 +1247,13 @@ function drawAmbient(){
       ctx.fillRect(p.x-1, p.y, 3, p.size*3);
     }
     else if(p.type==='mote'){
+      // 2-concentric additive (no gradient alloc)
       ctx.globalCompositeOperation='lighter';
       const pulse = 0.6 + Math.sin(p.phase)*0.4;
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*3);
-      g.addColorStop(0, p.color + `${(a*pulse).toFixed(2)})`);
-      g.addColorStop(1, p.color + '0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = p.color + (a*pulse*0.4).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*2.4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = p.color + (a*pulse*0.8).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*1.1, 0, Math.PI*2); ctx.fill();
       ctx.fillStyle = 'rgba(255,255,255,'+(a*pulse).toFixed(2)+')';
       ctx.beginPath(); ctx.arc(p.x, p.y, p.size*0.5, 0, Math.PI*2); ctx.fill();
     }
@@ -1234,16 +1277,16 @@ function drawAmbient(){
       ctx.fill();
     }
     else if(p.type==='golden'){
+      // 3-layer additive (no gradient alloc)
       ctx.globalCompositeOperation='lighter';
       const pulse = 0.6 + Math.sin(p.phase)*0.4;
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*3);
-      g.addColorStop(0, `rgba(255,230,90,${a*0.9})`);
-      g.addColorStop(0.5, `rgba(255,180,40,${a*0.4})`);
-      g.addColorStop(1, 'rgba(255,140,20,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*3*pulse, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = `rgba(255,255,220,${a})`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*0.45, 0, Math.PI*2); ctx.fill();
+      const rad = p.size * pulse;
+      ctx.fillStyle = `rgba(255,140,20,${(a*0.35).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad*2.4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,180,40,${(a*0.7).toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad*1.2, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,255,220,${a.toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, rad*0.45, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
   }
@@ -5115,8 +5158,9 @@ function drawCollectible(c){
   ctx.beginPath(); ctx.arc(0,0,c.r*2,0,Math.PI*2); ctx.fill();
   ctx.restore();
 
-  // 2. Magnetic orbit — 4 tiny particles orbiting at different phases & radii
-  //    Supersparkle gets rainbow multi-layer orbit, others get single-color
+  // 2. Magnetic orbit — 4 tiny particles orbiting (supersparkle=8 rainbow)
+  //    Flattened: 3 concentric arcs instead of createRadialGradient per particle.
+  //    Was ~4-8 gradient allocations per collectible per frame; now 0.
   ctx.save();
   ctx.globalCompositeOperation='lighter';
   const orbitSpeed = c.kind === 'supersparkle' ? 0.006 : 0.004;
@@ -5125,22 +5169,23 @@ function drawCollectible(c){
     const oa = (k/orbitCount)*Math.PI*2 + G.t*orbitSpeed + c.t*0.3;
     const orbR = c.r*1.35 + Math.sin(G.t*0.008 + k)*c.r*0.1;
     const ox = Math.cos(oa)*orbR;
-    const oy = Math.sin(oa)*orbR*0.55; // elliptical orbit (flatter)
+    const oy = Math.sin(oa)*orbR*0.55;
     const orbAlpha = 0.5 + Math.sin(G.t*0.01 + k)*0.3;
-    // particle glow
-    let orbColor;
+    // Pre-compute fill color (no gradient, use 3 concentric alpha-stepped circles)
+    let fillCol;
     if(c.kind === 'supersparkle'){
-      orbColor = `hsla(${(G.t*0.3 + k*45)%360},100%,75%,`;
+      fillCol = `hsla(${(G.t*0.3 + k*45)%360},100%,75%,`;
     } else {
-      orbColor = `rgba(${baseRGB},`;
+      fillCol = `rgba(${baseRGB},`;
     }
-    const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, 2.8);
-    og.addColorStop(0, orbColor + orbAlpha + ')');
-    og.addColorStop(1, orbColor + '0)');
-    ctx.fillStyle = og;
+    // outer faded halo
+    ctx.fillStyle = fillCol + (orbAlpha*0.35).toFixed(2) + ')';
     ctx.beginPath(); ctx.arc(ox, oy, 2.8, 0, Math.PI*2); ctx.fill();
-    // particle core
-    ctx.fillStyle = `rgba(255,255,255,${orbAlpha*0.85})`;
+    // mid glow
+    ctx.fillStyle = fillCol + (orbAlpha*0.7).toFixed(2) + ')';
+    ctx.beginPath(); ctx.arc(ox, oy, 1.6, 0, Math.PI*2); ctx.fill();
+    // bright core
+    ctx.fillStyle = `rgba(255,255,255,${(orbAlpha*0.85).toFixed(2)})`;
     ctx.beginPath(); ctx.arc(ox, oy, 0.8, 0, Math.PI*2); ctx.fill();
   }
   ctx.restore();
@@ -7442,61 +7487,53 @@ function drawBossWave(){
     ctx.fill();
     ctx.restore();
 
-    // 4. DEMONIC FACES — 3 faces emerging from the flame (roar animation)
+    // 4. DEMONIC FACES — flat-rotated (no ctx.rotate save/restore pairs).
+    //    Pre-computed rotation offsets for the slanted eye/pupil ovals.
+    //    Faces with emerge < 0.25 are skipped entirely (was 0.2) — saves ~1 face/frame.
     ctx.save();
     ctx.globalCompositeOperation='lighter';
+    // Pre-computed positions: point (-12,-10) rotated by ±0.3 rad
+    const _FX = 14.42, _FY = 6.01; // magnitudes (eye position after rotation)
     const facePositions = [
       {y: H*0.22, scale: 1.0, phase: 0},
       {y: H*0.52, scale: 1.3, phase: 2.1},
       {y: H*0.80, scale: 0.9, phase: 4.3},
     ];
     for(const fp of facePositions){
-      const emerge = (Math.sin(G.t*0.003 + fp.phase) + 1) * 0.5; // 0..1 pulsing
-      if(emerge < 0.2) continue;
+      const emerge = (Math.sin(G.t*0.003 + fp.phase) + 1) * 0.5;
+      if(emerge < 0.25) continue;  // raised threshold → typically 1-2 faces render
       const faceX = wx - 60 + Math.sin(G.t*0.005 + fp.phase)*18;
-      const fs = fp.scale * (0.6 + emerge*0.6); // face scale
-      const fa = emerge * 0.75;  // face alpha
+      const fs = fp.scale * (0.6 + emerge*0.6);
+      const fa = emerge * 0.75;
       ctx.save();
       ctx.translate(faceX, fp.y);
       ctx.scale(fs, fs);
-      // face mass (orange-red oval)
+      // face mass — gradient still needs per-face alpha so cannot be cached globally
       const fg = ctx.createRadialGradient(0, 0, 5, 0, 0, 42);
       fg.addColorStop(0, `rgba(255,140,40,${fa*0.9})`);
       fg.addColorStop(0.6, `rgba(200,40,20,${fa*0.5})`);
       fg.addColorStop(1, 'rgba(180,20,10,0)');
       ctx.fillStyle = fg;
       ctx.beginPath(); ctx.ellipse(0, 0, 42, 52, 0, 0, Math.PI*2); ctx.fill();
-      // angry eyes (slanted ovals, bright white-hot)
+      // angry eyes — direct ellipse with rotation parameter (no nested save/rotate/restore)
       ctx.fillStyle = `rgba(255,250,200,${fa})`;
-      ctx.save();
-      ctx.rotate(-0.3);
-      ctx.beginPath(); ctx.ellipse(-12, -10, 6, 3, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      ctx.save();
-      ctx.rotate(0.3);
-      ctx.beginPath(); ctx.ellipse(12, -10, 6, 3, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      // pupils (dark slits)
+      ctx.beginPath(); ctx.ellipse(-_FX, -_FY, 6, 3, -0.3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse( _FX, -_FY, 6, 3,  0.3, 0, Math.PI*2); ctx.fill();
+      // pupils — also flat
       ctx.fillStyle = `rgba(40,0,0,${fa})`;
-      ctx.save();
-      ctx.rotate(-0.3);
-      ctx.beginPath(); ctx.ellipse(-12, -10, 2, 2, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      ctx.save();
-      ctx.rotate(0.3);
-      ctx.beginPath(); ctx.ellipse(12, -10, 2, 2, 0, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-      // horns (two curved triangles on top)
+      ctx.beginPath(); ctx.arc(-_FX, -_FY, 2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc( _FX, -_FY, 2, 0, Math.PI*2); ctx.fill();
+      // horns
       ctx.fillStyle = `rgba(80,10,10,${fa*0.8})`;
       ctx.beginPath();
       ctx.moveTo(-18, -22); ctx.lineTo(-24, -40); ctx.lineTo(-12, -26); ctx.closePath(); ctx.fill();
       ctx.beginPath();
       ctx.moveTo(18, -22); ctx.lineTo(24, -40); ctx.lineTo(12, -26); ctx.closePath(); ctx.fill();
-      // screaming mouth (open oval with fangs)
+      // screaming mouth
       const mouthOpen = 10 + Math.sin(G.t*0.012+fp.phase)*4;
       ctx.fillStyle = `rgba(20,0,0,${fa*0.85})`;
       ctx.beginPath(); ctx.ellipse(0, 14, 10, mouthOpen, 0, 0, Math.PI*2); ctx.fill();
-      // fangs (white triangles)
+      // fangs
       ctx.fillStyle = `rgba(255,240,220,${fa})`;
       ctx.beginPath();
       ctx.moveTo(-5, 8); ctx.lineTo(-3, 14); ctx.lineTo(-1, 8); ctx.closePath(); ctx.fill();
@@ -8577,26 +8614,18 @@ function render(){
     ctx.fillStyle = bg2;
     ctx.beginPath(); ctx.arc(B.x, B.y, sR, 0, Math.PI*2); ctx.fill();
 
-    // Hexagonal tech pattern (clipped to bubble)
+    // Hexagonal tech pattern — pre-rendered tile composited instead of per-frame stroke arcs.
+    // Each shield color state has its own cached tile (rebuilt only on color change).
     ctx.save();
     ctx.beginPath(); ctx.arc(B.x, B.y, sR, 0, Math.PI*2); ctx.clip();
     ctx.globalAlpha = 0.22 + G.shieldImpact*0.3;
-    ctx.strokeStyle = hex;
-    ctx.lineWidth = 1;
-    const hexSize = 11;
-    const offset = (G.t*0.02)%(hexSize*1.5);
-    for(let hy = B.y - sR + offset; hy < B.y + sR; hy += hexSize*1.5){
-      for(let hx = B.x - sR; hx < B.x + sR; hx += hexSize*Math.sqrt(3)){
-        const col = Math.floor((hx-B.x)/(hexSize*Math.sqrt(3)));
-        const yAdj = (col%2===0) ? 0 : hexSize*0.75;
-        ctx.beginPath();
-        for(let k=0;k<6;k++){
-          const a = (k/6)*Math.PI*2 + Math.PI/6;
-          const px = hx + Math.cos(a)*hexSize;
-          const py = hy + yAdj + Math.sin(a)*hexSize;
-          if(k===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        ctx.closePath(); ctx.stroke();
+    const hexTile = getShieldHexTile(hex);
+    const tileW = hexTile.width, tileH = hexTile.height;
+    const yDrift = (G.t*0.02) % tileH;
+    // Tile the cached bitmap across the shield bubble region
+    for(let py = B.y - sR - tileH + yDrift; py < B.y + sR; py += tileH){
+      for(let px = B.x - sR - tileW; px < B.x + sR; px += tileW){
+        ctx.drawImage(hexTile, px, py);
       }
     }
     ctx.restore();
