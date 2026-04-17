@@ -370,11 +370,46 @@ const SFX_CONFIG = {
     { fn:'noise', args:[0.6, 0.22, 400, -200] },
     { fn:'beep', args:[160, 0.4, 'sawtooth', 0.22, -80] },
   ],
+  // Near-miss "whoosh" — airy sweep, satisfying but not attention-stealing
+  whoosh: [
+    { fn:'noise', args:[0.14, 0.08, 1800, -800] },
+    { fn:'beep', args:[600, 0.10, 'sine', 0.06, 400] },
+  ],
+  // Distinct power-up flavors
+  shieldPick: [
+    { fn:'richTone', args:[800, 0.14, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.15, slide:300, filterStart:1200, filterEnd:3800, q:6}] },
+    { fn:'beep', args:[1200, 0.08, 'sine', 0.10], delay:60 },
+  ],
+  magnetPick: [
+    { fn:'richTone', args:[420, 0.18, {type:'sawtooth', type2:'triangle', octave:2, mix:0.4, vol:0.14, slide:200, filterStart:700, filterEnd:2400, q:7}] },
+  ],
+  rocketPick: [
+    { fn:'noise', args:[0.22, 0.14, 800, 1200] },
+    { fn:'richTone', args:[260, 0.16, {type:'sawtooth', type2:'square', octave:2, mix:0.5, vol:0.14, slide:500, filterStart:500, filterEnd:3200, q:5}], delay:20 },
+  ],
 };
 const SFX_FUNCS = { beep, richTone, noise };
 function sfx(n){
   // Native haptics pass-through (silent if not on device)
-  try { if(window.nativeHaptic && window.nativeHaptic[n]) window.nativeHaptic[n](); } catch(e){}
+  try {
+    // Native Capacitor haptics (richer: LIGHT/MEDIUM/HEAVY/etc)
+    if(window.nativeHaptic && window.nativeHaptic[n]) window.nativeHaptic[n]();
+    // Fallback: Web Vibration API for web/non-Capacitor users
+    else if(navigator.vibrate){
+      // Map SFX to vibration patterns (ms). Only trigger for impactful events.
+      const VIBE = {
+        jump: 12, djump: 18,
+        stomp: [30,20,30], boom: [60,30,60],
+        hit: 50, power: 25,
+        whoosh: 8,
+        coin: 5, gem: 14, water: 10, ice: 12,
+        shieldPick: 30, magnetPick: 20, rocketPick: 40,
+        warn: [40,40,40], wave: 35,
+      };
+      const pattern = VIBE[n];
+      if(pattern !== undefined) navigator.vibrate(pattern);
+    }
+  } catch(e){}
   const cfg = SFX_CONFIG[n];
   if(!cfg) return;
   try{
@@ -621,6 +656,9 @@ function availableEnemies(){
 //  TUTORIALS — explained the first time each element is encountered
 // ============================================================================
 const TUTORIALS = {
+  // Intro mechanics (fire at game start + first combo)
+  fuse_intro:  { title:'💣 YOUR FUSE = LIFE', sub:'The top bar is your fuse. It drains over time + on hits. Collect ✨ sparks and 💧 water drops to keep it burning!', icon:'💣', color:'#ff7730' },
+  combo_intro: { title:'⚡ COMBO CHAIN', sub:'Stomp or near-miss chains build a COMBO. Each link boosts your reward. Break the chain and combo resets!', icon:'⚡', color:'#ff4db8' },
   // Abilities
   jump:       { title:'TAP TO JUMP', sub:'Tap the screen to jump. HOLD for a higher jump.', icon:'👆', color:'#ff4db8' },
   doubleJump: { title:'TRIPLE JUMP!', sub:'Tap in air for 2nd jump. Tap AGAIN for 3rd jump! Reach sparks way up high!', icon:'⚡⚡', color:'#c77dff' },
@@ -1019,31 +1057,44 @@ function triggerSmash(){
   G.shockwaves.push({x:B.x, y:B.y, r:6, maxR:70, life:1, color:C.fireHi});
 }
 function shieldShatter(){
-  // Dramatic shatter: polygon fragments + AOE clears nearby obstacles
+  // CYAN CRYSTAL SHATTER — matches shield color, feels like glass breaking
   G.flash = 0.7;
-  G.shake = 18;
-  // Expanding double shockwave
-  G.shockwaves.push({x:B.x, y:B.y, r:B.r+10, maxR:200, life:1, color:'#e0f4ff'});
-  G.shockwaves.push({x:B.x, y:B.y, r:B.r+5, maxR:140, life:1, color:'#ffffff'});
-  // 16 glass-like fragments flying outward
-  for(let i=0;i<16;i++){
-    const a = (i/16)*Math.PI*2;
-    const spd = rand(5, 10);
+  G.shake = 20;
+  // Triple cyan shockwave (crystalline ripple effect)
+  G.shockwaves.push({x:B.x, y:B.y, r:B.r+10, maxR:220, life:1, color:'#c0f0ff'});
+  G.shockwaves.push({x:B.x, y:B.y, r:B.r+5, maxR:160, life:1, color:'#80d8ff'});
+  G.shockwaves.push({x:B.x, y:B.y, r:B.r+2, maxR:90, life:1, color:'#ffffff'});
+  // 20 cyan glass-like fragments (more than before, more dramatic)
+  for(let i=0;i<20;i++){
+    const a = (i/20)*Math.PI*2;
+    const spd = rand(5, 12);
     G.particles.push({
       x:B.x+Math.cos(a)*B.r, y:B.y+Math.sin(a)*B.r,
       vx:Math.cos(a)*spd, vy:Math.sin(a)*spd - 2,
-      life:1, max:rand(28,42),
-      color: i%3===0 ? '#ffffff' : (i%3===1 ? '#b8e4ff' : '#60b0e8'),
-      size:rand(3,6), g:0.18, shape:'rect', rot:rand(0,6.28), vr:rand(-0.5,0.5),
+      life:1, max:rand(30,48),
+      // Cyan palette (not white) — matches shield identity
+      color: i%4===0 ? '#ffffff' : i%4===1 ? '#c0f0ff' : i%4===2 ? '#80d8ff' : '#4dd0ff',
+      size:rand(3,7), g:0.18, shape:'rect', rot:rand(0,6.28), vr:rand(-0.6,0.6),
     });
   }
-  // AOE — destroy nearby obstacles & enemies with reward (preserve mystery/bouncer)
+  // Secondary inner burst (depth) — smaller cyan rings
+  for(let i=0;i<12;i++){
+    const a = (i/12)*Math.PI*2 + 0.15;
+    G.particles.push({
+      x:B.x, y:B.y,
+      vx:Math.cos(a)*rand(2,4), vy:Math.sin(a)*rand(2,4) - 1,
+      life:1, max:rand(20,30),
+      color: '#ffffff',
+      size:rand(1.5,3), g:0.05, shape:'circle',
+    });
+  }
+  // AOE — destroy nearby obstacles & enemies (cyan bursts, not white)
   let cleared = 0;
   for(let j=G.obstacles.length-1;j>=0;j--){
     const o = G.obstacles[j];
     if(o.mystery || o.bouncer) continue;
     if(Math.abs((o.x+o.w/2) - B.x) < 180){
-      spawnBurst(o.x+o.w/2, o.y+o.h/2, '#ffffff', 12);
+      spawnBurst(o.x+o.w/2, o.y+o.h/2, '#80d8ff', 12);
       G.obstacles.splice(j,1);
       cleared++;
     }
@@ -1051,16 +1102,18 @@ function shieldShatter(){
   for(let j=G.enemies.length-1;j>=0;j--){
     const e = G.enemies[j];
     if(Math.abs((e.x+e.w/2) - B.x) < 180){
-      spawnBurst(e.x+e.w/2, e.y+e.h/2, '#ffffff', 14);
+      spawnBurst(e.x+e.w/2, e.y+e.h/2, '#80d8ff', 14);
       G.runCoins += e.reward || 1;
       G.enemies.splice(j,1);
       cleared++;
     }
   }
   G.shieldMax = 0;
-  popup(B.x, B.y-90, 'SHIELD SHATTERED!', '#e0f4ff', 1.5);
+  popup(B.x, B.y-90, 'SHIELD SHATTERED!', '#c0f0ff', 1.5);
   if(cleared > 0) popup(B.x, B.y-60, 'AOE: '+cleared+' cleared', '#fff', 1.1);
-  sfx('boom');
+  // Glass-shatter style SFX (higher pitch than generic boom)
+  sfx('ice');
+  setTimeout(()=>sfx('boom'), 60);
 }
 function spawnStarBurst(x,y){
   const cols=['#ffd54a','#fff3a0','#ff4db8'];
@@ -1433,10 +1486,12 @@ function startGame(){
   G.tutModal = null;
   G.tutQueue = [];
   G.practice = [];
-  // Initial jump tutorial — delayed until after countdown completes
+  // Initial tutorial sequence for first-time players — fuse intro → jump → triple jump
   if(!G.seen.jump){
     setTimeout(() => {
       if(G.state==='play'){
+        // Fuse mechanic explained BEFORE jump tutorial (if not seen yet)
+        if(!G.seen.fuse_intro) showTutorial('fuse_intro', true);
         showTutorial('jump', true);
         if(!G.seen.doubleJump){
           setTimeout(()=>{ if(!G.tutModal && G.state==='play') showTutorial('doubleJump', true); }, 50);
@@ -1614,21 +1669,41 @@ function onWorldUp(){
   showTutorial('worldup', true);
   if(G.world === UNLOCK.groundPound) showTutorial('groundPound', true);
   if(G.world === UNLOCK.glide) showTutorial('glide', true);
-  // Reward: full fuse refill + visual drama
-  G.fuse = Math.min(120, G.fuse + 40);
+  // CEREMONY: full screen takeover for 1.2s — this is a HUGE moment
+  G.fuse = Math.min(CONFIG.FUSE.overcharge, G.fuse + 40);
   G.flash = 1;
-  G.shake = 16;
-  G.shockwaves.push({x:W/2, y:H/2, r:10, maxR:400, life:1, color:w.horizon});
-  G.shockwaves.push({x:W/2, y:H/2, r:5, maxR:300, life:1, color:w.accent});
+  G.shake = 20;
+  // Triple shockwave cascade (visual crescendo)
+  G.shockwaves.push({x:W/2, y:H/2, r:10, maxR:450, life:1, color:w.horizon});
+  G.shockwaves.push({x:W/2, y:H/2, r:5, maxR:350, life:1, color:w.accent});
+  G.shockwaves.push({x:W/2, y:H/2, r:2, maxR:200, life:1, color:'#ffffff'});
+  // Confetti burst from 5 points (stage-wide celebration)
   spawnConfetti(W/2, H/2-30);
   spawnConfetti(W/2-80, H/2+20);
   spawnConfetti(W/2+80, H/2+20);
-  popup(W/2, H/2-40, 'WORLD '+G.world, '#ffffff', 2.2);
-  popup(W/2, H/2+10, w.emoji+' '+w.name.toUpperCase()+' '+w.emoji, w.accent, 1.4);
-  popup(W/2, H/2+60, '+40 FUSE', C.water, 1.2);
+  spawnConfetti(W/2-140, H/2-10);
+  spawnConfetti(W/2+140, H/2-10);
+  // Radial particle burst from center (like fireworks)
+  for(let k=0; k<24; k++){
+    const a = (k/24)*Math.PI*2;
+    const spd = rand(6, 12);
+    G.particles.push({
+      x:W/2, y:H/2,
+      vx:Math.cos(a)*spd, vy:Math.sin(a)*spd,
+      life:1, max:rand(45,65),
+      color: k%2 ? w.horizon : w.accent,
+      size:rand(3,6), g:0.08, shape:'circle',
+    });
+  }
+  popup(W/2, H/2-60, 'WORLD '+G.world, '#ffffff', 2.6);
+  popup(W/2, H/2-10, w.emoji+' '+w.name.toUpperCase()+' '+w.emoji, w.accent, 1.6);
+  popup(W/2, H/2+35, 'NEW TERRITORY UNLOCKED', '#fff', 1);
+  popup(W/2, H/2+70, '+40 FUSE', C.water, 1.2);
+  // Chord progression (3 ascending tones)
   sfx('power');
   setTimeout(()=>sfx('combo'), 120);
   setTimeout(()=>sfx('power'), 240);
+  setTimeout(()=>sfx('gem'), 380);
   // Persist highest world ever reached
   if(G.world > G.maxWorld){
     G.maxWorld = G.world;
@@ -1660,9 +1735,34 @@ function revive(){
   G.obstacles = G.obstacles.filter(o => o.x > B.x + 200 || o.x < B.x - 100);
   G.enemies = G.enemies.filter(e => e.x > B.x + 200 || e.x < B.x - 100);
   G.transition = 0.2;
+  // SECOND CHANCE TAKEOVER — screen-wide celebration
+  G.flash = 1;
+  G.shake = 16;
+  // Triple shockwave cascade from player
+  G.shockwaves.push({x:B.x, y:B.y, r:10, maxR:400, life:1, color:'#ffd54a'});
+  G.shockwaves.push({x:B.x, y:B.y, r:6, maxR:280, life:1, color:'#fff3a0'});
+  G.shockwaves.push({x:B.x, y:B.y, r:3, maxR:160, life:1, color:'#ffffff'});
   spawnConfetti(B.x, B.y);
-  popup(B.x, B.y-100, 'REVIVE!', C.coinHi, 2.2);
+  spawnConfetti(W/2, H/2-40);
+  // Gold radial burst (triumphant fireworks)
+  for(let k=0; k<30; k++){
+    const a = (k/30)*Math.PI*2;
+    G.particles.push({
+      x:B.x, y:B.y,
+      vx:Math.cos(a)*rand(5,10), vy:Math.sin(a)*rand(5,10)-2,
+      life:1, max:rand(35,55),
+      color: k%3===0 ? '#ffffff' : k%3===1 ? '#ffd54a' : '#ff9a40',
+      size:rand(3,6), g:0.12, shape:'circle',
+    });
+  }
+  popup(W/2, H/2-30, 'SECOND CHANCE!', '#ffd54a', 2.4);
+  popup(W/2, H/2+15, 'REVIVED • GRACE SHIELD x3', '#fff', 1.1);
+  popup(B.x, B.y-100, 'REVIVE!', C.coinHi, 1.6);
+  // Triumphant ascending chord
   sfx('power');
+  setTimeout(()=>sfx('gem'), 100);
+  setTimeout(()=>sfx('power'), 240);
+  setTimeout(()=>sfx('combo'), 380);
 }
 function claimDaily(){
   // Buffed: 50 → 150 sparks + 1 gem (3× value, meaningful daily return incentive)
@@ -1889,20 +1989,40 @@ function update(dt){
     G.slowmo -= dt/1000;
   }
 
-  // Stomp Fever: when meter fills to 100 → auto-activate 5s super mode
+  // Stomp Fever: when meter fills to 100 → auto-activate 5s super mode (HUGE moment)
   if(G.world >= UNLOCK.fever && G.fever >= 100 && !G.feverActive){
     G.feverActive = true;
     G.feverTimer = 5000;
     G.fever = 0;
-    G.flash = 0.8;
-    G.shake = 10;
+    G.flash = 1;
+    G.shake = 14;
+    // Gold radial burst from center (like a supernova)
+    G.shockwaves.push({x:W/2, y:H/2, r:12, maxR:400, life:1, color:'#ffd54a'});
+    G.shockwaves.push({x:W/2, y:H/2, r:6, maxR:260, life:1, color:'#fff3a0'});
     spawnConfetti(B.x, B.y);
+    spawnConfetti(W/2, H/2);
+    // Gold particle explosion
+    for(let k=0; k<20; k++){
+      const a = (k/20)*Math.PI*2;
+      G.particles.push({
+        x:W/2, y:H/2,
+        vx:Math.cos(a)*rand(6,10), vy:Math.sin(a)*rand(6,10),
+        life:1, max:rand(30,50),
+        color: k%2 ? '#ffd54a' : '#ff9a40',
+        size:rand(3,6), g:0.1, shape:'circle',
+      });
+    }
     showTutorial('fever', true);
     if(!G.tutModal){
-      popup(W/2, H/2-40, 'STOMP FEVER!', '#ffe0a0', 2.2);
-      popup(W/2, H/2+4, 'INVINCIBLE • x2 COINS', '#fff', 1.1);
+      popup(W/2, H/2-50, '🔥 STOMP FEVER! 🔥', '#ffe0a0', 2.6);
+      popup(W/2, H/2, 'INVINCIBLE • x2 COINS', '#fff', 1.3);
+      popup(W/2, H/2+40, '5 SECONDS', '#ffd54a', 1.1);
     }
+    // Ascending chord (builds tension → release)
     sfx('power');
+    setTimeout(()=>sfx('combo'), 100);
+    setTimeout(()=>sfx('combo'), 200);
+    setTimeout(()=>sfx('gem'), 320);
   }
   // Coin Rush event — only from W4 onwards
   if(G.world >= UNLOCK.coinrush && !G.coinRushActive && G.distance >= G.nextCoinRushAt){
@@ -2142,7 +2262,17 @@ function update(dt){
           }
           G.combo++; G.comboTime = 1400;
           if(G.combo>G.bestCombo) G.bestCombo = G.combo;
-          sfx('ui');
+          sfx('whoosh');
+          // Cyan speed-streak particles trailing behind player (satisfaction feedback)
+          for(let k=0; k<4; k++){
+            G.particles.push({
+              x: B.x - 10 + rand(-4,4), y: B.y + rand(-8,8),
+              vx: rand(-3,-1), vy: rand(-0.5, 0.5),
+              life:1, max: rand(12,20),
+              color: streak>=5 ? 'rgba(255,215,74,0.9)' : 'rgba(126,239,255,0.9)',
+              size: rand(1.2, 2.2), g: 0, shape:'circle',
+            });
+          }
         }
       }
     }
@@ -2283,6 +2413,8 @@ function update(dt){
       spawnCoinBurst(e.x+e.w/2, e.y+e.h/2, 4);
       G.combo++; G.comboTime=1400;
       if(G.combo>G.bestCombo) G.bestCombo=G.combo;
+      // First-time combo hit → show explanation tooltip
+      if(G.combo === 2 && !G.seen.combo_intro) showTutorial('combo_intro', true);
       // CHAIN STOMP BONUS — escalates each additional in-air stomp
       if(B.stompChain >= 2){
         const bonus = (B.stompChain - 1) * 3;
@@ -2459,17 +2591,17 @@ function collectItem(c){
     G.shieldMax = maxCharges;
     G.shieldImpact = 0;
     popup(c.x,c.y-20,'SHIELD x'+maxCharges+'!', '#ffffff', 1.3);
-    sfx('power'); spawnBurst(c.x,c.y,'#ffffff',20);
+    sfx('shieldPick'); spawnBurst(c.x,c.y,'#c0f0ff',20);
   } else if(c.kind==='magnet'){
     // Stacks: +8s, capped at 24s total
     G.magnet = Math.min(24, G.magnet + 8);
     popup(c.x,c.y-20, G.magnet > 8 ? 'MAGNET +8s!' : 'MAGNET!', '#ff4db8', 1.2);
-    sfx('power'); spawnBurst(c.x,c.y,C.gem,20);
+    sfx('magnetPick'); spawnBurst(c.x,c.y,C.gem,20);
   } else if(c.kind==='rocket'){
     // Stacks: +5s, capped at 15s total
     G.rocket = Math.min(15, G.rocket + 5);
     popup(c.x,c.y-20, G.rocket > 5 ? 'ROCKET +5s!' : 'ROCKET!', C.fireHi, 1.3);
-    sfx('power'); spawnBurst(c.x,c.y,C.fireHi,22);
+    sfx('rocketPick'); spawnBurst(c.x,c.y,C.fireHi,22);
   } else if(c.kind==='dbl'){
     // Stacks: +10s, capped at 30s
     G.dbl = Math.min(30, G.dbl + 10);
@@ -2518,9 +2650,32 @@ function collectItem(c){
 }
 
 function explode(){
-  spawnBurst(B.x,B.y, C.fireHi, 40);
-  spawnBurst(B.x,B.y, C.fire, 30);
-  spawnConfetti(B.x,B.y);
+  // CLIMACTIC DEATH — layered particles + shake + flash + slow-mo feel
+  spawnBurst(B.x, B.y, C.fireHi, 40);
+  spawnBurst(B.x, B.y, C.fire, 30);
+  spawnBurst(B.x, B.y, '#ffffff', 20);
+  spawnConfetti(B.x, B.y);
+  // Ring shockwaves (3 concentric)
+  G.shockwaves.push({x:B.x, y:B.y, r:15, maxR:260, life:1, color:'#ffffff'});
+  G.shockwaves.push({x:B.x, y:B.y, r:8, maxR:180, life:1, color:C.fireHi});
+  G.shockwaves.push({x:B.x, y:B.y, r:4, maxR:100, life:1, color:C.fire});
+  // Debris chunks (rect particles with gravity) — feels like bomb body shatter
+  for(let k=0; k<16; k++){
+    const ang = (k/16)*Math.PI*2;
+    const spd = rand(5, 11);
+    G.particles.push({
+      x:B.x, y:B.y,
+      vx:Math.cos(ang)*spd + rand(-1,1), vy:Math.sin(ang)*spd - 3,
+      life:1, max:rand(40,60),
+      color: k%3===0 ? C.bombPink : k%3===1 ? '#ffffff' : C.fuseHole,
+      size:rand(3,6), g:0.2, shape:'rect', rot:rand(0,6.28), vr:rand(-0.5,0.5),
+    });
+  }
+  // Intense shake + white flash
+  G.shake = 24;
+  G.flash = 0.9;
+  // Deep bass boom (extra sub-beep for impact)
+  sfx('boom');
 }
 
 // ============================================================================
@@ -5157,6 +5312,7 @@ function drawObstacle(o){
 
 // Clear visual indicators above enemies so player knows stomp vs dodge
 function drawStompIndicator(cx, topY){
+  // SHAPE + SYMBOL — circle with ✓ checkmark (distinct from danger regardless of color)
   const bob = Math.sin(G.t*0.008) * 3;
   const y = topY - 24 + bob;
   // soft green glow
@@ -5168,22 +5324,23 @@ function drawStompIndicator(cx, topY){
   ctx.fillStyle = gl;
   ctx.beginPath(); ctx.arc(cx, y, 16, 0, Math.PI*2); ctx.fill();
   ctx.restore();
-  // down-arrow / "stomp here" triangle
+  // Circle background (distinct shape — not triangle)
   ctx.fillStyle = '#5fee80';
-  ctx.strokeStyle = '#126028';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#0a3818';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, y, 9, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  // Checkmark ✓ (universal stomp-safe symbol — works for colorblind)
+  ctx.strokeStyle = '#0a3818';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(cx-8, y-6);
-  ctx.lineTo(cx+8, y-6);
-  ctx.lineTo(cx, y+7);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  // small boot/foot print on top
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(cx-1.5, y-4, 3, 5);
-  ctx.fillRect(cx-3, y-1, 6, 2);
+  ctx.moveTo(cx-4, y);
+  ctx.lineTo(cx-1, y+3);
+  ctx.lineTo(cx+4, y-3);
+  ctx.stroke();
 }
 function drawDangerIndicator(cx, topY){
+  // SHAPE + SYMBOL — warning triangle with ! (distinct from stomp regardless of color)
   const pulse = 0.7 + Math.sin(G.t*0.018) * 0.3;
   const y = topY - 24 + Math.sin(G.t*0.012)*1.5;
   // red menacing glow
@@ -5196,20 +5353,20 @@ function drawDangerIndicator(cx, topY){
   ctx.fillStyle = gl;
   ctx.beginPath(); ctx.arc(cx, y, 18, 0, Math.PI*2); ctx.fill();
   ctx.restore();
-  // warning triangle with exclamation
+  // Triangle warning (NOT circle — shape distinct from stomp)
   ctx.fillStyle = '#ff3030';
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#3a0808';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(cx, y-8);
-  ctx.lineTo(cx+8, y+6);
-  ctx.lineTo(cx-8, y+6);
+  ctx.moveTo(cx, y-9);
+  ctx.lineTo(cx+9, y+7);
+  ctx.lineTo(cx-9, y+7);
   ctx.closePath();
   ctx.fill(); ctx.stroke();
-  // exclamation !
+  // Bold exclamation ! (universal danger symbol)
   ctx.fillStyle = '#fff';
-  ctx.fillRect(cx-1.2, y-3, 2.4, 5);
-  ctx.beginPath(); ctx.arc(cx, y+4, 1.3, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(cx-1.5, y-4, 3, 6);
+  ctx.beginPath(); ctx.arc(cx, y+4, 1.5, 0, Math.PI*2); ctx.fill();
 }
 function drawFlame(x,y,w,h,phase){
   ctx.save();
@@ -7760,42 +7917,75 @@ function drawHUD(){
   drawFuseBar();
   drawFeverBar();
 
-  // combo
+  // combo — blinks when <600ms remaining to signal expiry
   if(G.combo >= 2){
     ctx.save();
-    ctx.font = 'bold 28px Chakra Petch'; ctx.textAlign='center';
-    const alpha = Math.min(1, G.comboTime/1400);
+    const comboRatio = G.comboTime / 1400;
+    const isExpiring = comboRatio < 0.43; // <600ms
+    // Base alpha
+    let alpha = Math.min(1, comboRatio);
+    // Expiring blink (flickers faster as time runs out)
+    if(isExpiring){
+      const blinkSpeed = 0.04 + (0.43 - comboRatio)*0.08;
+      alpha *= 0.4 + Math.sin(G.t*blinkSpeed)*0.6;
+    }
+    // Scale pulses slightly when expiring for drama
+    const pulseScale = isExpiring ? (1 + Math.sin(G.t*0.03)*0.04) : 1;
+    ctx.textAlign='center';
+    ctx.save();
+    ctx.translate(W/2, 230);
+    ctx.scale(pulseScale, pulseScale);
+    ctx.font = 'bold 28px Chakra Petch';
     ctx.fillStyle = `rgba(0,0,0,${alpha*0.6})`;
-    ctx.fillText('COMBO x'+G.combo, W/2+2, 230+2);
-    const grad = ctx.createLinearGradient(0,210,0,250);
-    grad.addColorStop(0, C.bombPinkHi); grad.addColorStop(1, C.fuseHole);
+    ctx.fillText('COMBO x'+G.combo, 2, 2);
+    const grad = ctx.createLinearGradient(0,-20,0,20);
+    // Red tint when expiring
+    if(isExpiring){
+      grad.addColorStop(0, '#ffc080'); grad.addColorStop(1, '#ff4060');
+    } else {
+      grad.addColorStop(0, C.bombPinkHi); grad.addColorStop(1, C.fuseHole);
+    }
     ctx.fillStyle = grad; ctx.globalAlpha = alpha;
-    ctx.fillText('COMBO x'+G.combo, W/2, 230);
+    ctx.fillText('COMBO x'+G.combo, 0, 0);
+    ctx.restore();
+    // timer bar
     const bw = 140;
+    ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     roundRect(W/2-bw/2, 240, bw, 6, 3); ctx.fill();
-    ctx.fillStyle = C.fuseHole;
-    roundRect(W/2-bw/2, 240, bw*(G.comboTime/1400), 6, 3); ctx.fill();
+    ctx.fillStyle = isExpiring ? '#ff4060' : C.fuseHole;
+    roundRect(W/2-bw/2, 240, bw*comboRatio, 6, 3); ctx.fill();
     ctx.restore();
   }
 
-  // power pills
-  let py = H - 200;
+  // power pills — bigger + pulse warning when <3s remaining
+  let py = H - 210;
   function powerPill(label, timeLeft, color, isCharges){
     ctx.save();
-    const w=74, h=74;
-    ctx.fillStyle='rgba(0,0,0,0.55)';
-    roundRect(W-w-20, py, w, h, 14); ctx.fill();
-    ctx.strokeStyle=color; ctx.lineWidth=3;
-    roundRect(W-w-20, py, w, h, 14); ctx.stroke();
-    ctx.fillStyle=color;
-    ctx.font='bold 22px Chakra Petch'; ctx.textAlign='center';
-    ctx.fillText(label, W-w/2-20, py+36);
-    ctx.font='bold 13px Chakra Petch'; ctx.fillStyle='#fff';
+    const w=84, h=84;
+    // Urgency blink when duration-based and low
+    const isLow = !isCharges && timeLeft < 3;
+    const blink = isLow ? 0.5 + Math.sin(G.t*0.03)*0.5 : 1;
+    ctx.globalAlpha = isLow ? (0.55 + blink*0.4) : 1;
+    // backdrop
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    roundRect(W-w-18, py, w, h, 16); ctx.fill();
+    // outline — thicker when low
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isLow ? 3.5 : 3;
+    if(isLow){ ctx.shadowColor = color; ctx.shadowBlur = 8*blink; }
+    roundRect(W-w-18, py, w, h, 16); ctx.stroke();
+    ctx.shadowBlur = 0;
+    // label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 26px Chakra Petch'; ctx.textAlign='center';
+    ctx.fillText(label, W-w/2-18, py+40);
+    // duration or charges
+    ctx.font = 'bold 14px Chakra Petch'; ctx.fillStyle = '#fff';
     const txt = isCharges ? ('x'+Math.floor(timeLeft)) : (timeLeft.toFixed(1)+'s');
-    ctx.fillText(txt, W-w/2-20, py+58);
+    ctx.fillText(txt, W-w/2-18, py+66);
     ctx.restore();
-    py -= 84;
+    py -= 94;
   }
   if(G.shield>0) powerPill('🛡', G.shield, '#fff', true);
   if(G.magnet>0) powerPill('U', G.magnet, C.gem);
@@ -7804,17 +7994,37 @@ function drawHUD(){
   if(G.slowmo>0) powerPill('⏱', G.slowmo, '#b8e8ff');
   if(G.smash>0)  powerPill('💥', G.smash, '#ff6a40', true);
 
-  // Boss timer
+  // Boss timer — bigger + readable during panic
   if(G.bossActive){
     ctx.save();
-    const bx = W/2-100, by=135, bw=200, bh=18;
-    ctx.fillStyle='rgba(0,0,0,0.6)';
-    roundRect(bx,by,bw,bh,9); ctx.fill();
-    ctx.fillStyle=C.fire;
+    const bx = W/2-120, by=135, bw=240, bh=22;
+    // Backdrop with pulse
+    const bossPulse = 0.85 + Math.sin(G.t*0.015)*0.15;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    roundRect(bx-3, by-3, bw+6, bh+6, 12); ctx.fill();
+    // Fill (depletes as time runs out)
     const fillN = G.bossTimer/12000;
-    roundRect(bx,by,bw*fillN,bh,9); ctx.fill();
-    ctx.fillStyle='#fff'; ctx.font='bold 11px Chakra Petch'; ctx.textAlign='center';
-    ctx.fillText('FIRE WAVE — DODGE & SURVIVE!', W/2, by+13);
+    const fg = ctx.createLinearGradient(bx, 0, bx+bw, 0);
+    fg.addColorStop(0, C.fire); fg.addColorStop(1, C.fireHi);
+    ctx.fillStyle = fg;
+    roundRect(bx, by, bw*fillN, bh, 9); ctx.fill();
+    // Remaining seconds, LARGE readable
+    const secs = Math.ceil(G.bossTimer/1000);
+    // Text shadow (dark outline for contrast)
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='900 15px Chakra Petch';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillText('🔥 SURVIVE '+secs+'s 🔥', W/2+1, by+bh/2+1);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('🔥 SURVIVE '+secs+'s 🔥', W/2, by+bh/2);
+    // Warning pulse border when <3s
+    if(secs <= 3){
+      ctx.strokeStyle = C.fire;
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = bossPulse;
+      ctx.shadowColor = C.fire; ctx.shadowBlur = 12;
+      roundRect(bx-3, by-3, bw+6, bh+6, 12); ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -8814,6 +9024,7 @@ function render(){
     ctx.restore();
   }
   if(G.rocket>0){
+    // Trail particles
     for(let i=0;i<4;i++){
       G.particles.push({
         x: B.x-30, y: B.y+10+rand(-10,10),
@@ -8821,6 +9032,17 @@ function render(){
         life: 1, max: 20, color: i%2?C.fireHi:C.fire, size: rand(4,8), g:0,
       });
     }
+    // Player aura — pulsing orange/red halo around bomb (makes invincibility visible)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const rPulse = 0.7 + Math.sin(G.t*0.02)*0.3;
+    const rAura = ctx.createRadialGradient(B.x, B.y, B.r, B.x, B.y, B.r*2.2);
+    rAura.addColorStop(0, `rgba(255,100,40,${0.5*rPulse})`);
+    rAura.addColorStop(0.6, `rgba(255,180,60,${0.25*rPulse})`);
+    rAura.addColorStop(1, 'rgba(255,60,20,0)');
+    ctx.fillStyle = rAura;
+    ctx.beginPath(); ctx.arc(B.x, B.y, B.r*2.2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
   }
   // Ground pound trail — intense downward streak
   if(B.pounding){
@@ -8989,6 +9211,17 @@ function render(){
     applyBloom();
     applyChromatic();
     applyFilmGrain();
+    // SLOWMO OVERLAY — cyan tint + subtle pulse when slowmo is active (visible state)
+    if(G.slowmo > 0){
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
+      const smPulse = 0.85 + Math.sin(G.t*0.008)*0.15;
+      // Cyan wash, stronger when fresh (depletes with time)
+      const smIntensity = Math.min(1, G.slowmo/4) * 0.12 * smPulse;
+      ctx.fillStyle = `rgba(100,220,255,${smIntensity.toFixed(3)})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
     // CRITICAL FUSE VIGNETTE — red edges + pulsing when below 25
     if(G.fuse > 0 && G.fuse < CONFIG.FUSE.rageBelow){
       ctx.save();
