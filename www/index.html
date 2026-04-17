@@ -307,67 +307,89 @@ function noise(dur, vol, filterFreq, slide){
   src.connect(filter); filter.connect(g); g.connect(a.destination);
   src.start();
 }
+// ============================================================================
+//  SFX — Data-driven sound library. To add/tune a sound, edit SFX_CONFIG below.
+//  Each entry is a list of sound calls ({fn, args} or {fn, args, delay}).
+//  fn: 'beep' | 'richTone' | 'noise'
+// ============================================================================
+const SFX_CONFIG = {
+  jump: [
+    { fn:'richTone', args:[300, 0.14, {type:'sawtooth', type2:'sine', octave:2, mix:0.4, vol:0.14, slide:250, filterStart:600, filterEnd:2200, q:6}] },
+  ],
+  djump: [
+    { fn:'richTone', args:[500, 0.12, {type:'sawtooth', type2:'square', octave:2, mix:0.5, vol:0.13, slide:400, filterStart:900, filterEnd:3400, q:8}] },
+  ],
+  coin: [
+    { fn:'beep', args:[1100, 0.06, 'triangle', 0.14] },
+    { fn:'beep', args:[1650, 0.08, 'triangle', 0.12], delay:45 },
+  ],
+  gem: [
+    { fn:'richTone', args:[1100, 0.1, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.15, filterStart:1500, filterEnd:3800}] },
+    { fn:'richTone', args:[1650, 0.12, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.13, filterStart:2000, filterEnd:4500}], delay:55 },
+    { fn:'richTone', args:[2200, 0.15, {type:'sine', type2:'triangle', octave:2, mix:0.4, vol:0.1, filterStart:2500, filterEnd:5000}], delay:120 },
+  ],
+  water: [
+    { fn:'richTone', args:[480, 0.22, {type:'sine', type2:'sine', octave:2.5, mix:0.3, vol:0.16, slide:-220, filterStart:800, filterEnd:400, q:4}] },
+  ],
+  ice: [
+    { fn:'richTone', args:[720, 0.16, {type:'triangle', type2:'square', octave:1.5, mix:0.25, vol:0.15, slide:350, filterStart:1200, filterEnd:3200, q:7}] },
+    { fn:'beep', args:[1400, 0.1, 'sine', 0.08], delay:40 },
+  ],
+  hit: [
+    { fn:'noise', args:[0.25, 0.28, 1000, -600] },
+    { fn:'beep', args:[120, 0.2, 'sawtooth', 0.22, -50] },
+  ],
+  stomp: [
+    { fn:'noise', args:[0.06, 0.18, 2500, -1500] },
+    { fn:'beep', args:[210, 0.08, 'square', 0.2] },
+    { fn:'beep', args:[420, 0.1, 'square', 0.15], delay:45 },
+  ],
+  boom: [
+    { fn:'noise', args:[0.5, 0.35, 600, -400] },
+    { fn:'beep', args:[65, 0.5, 'sawtooth', 0.3] },
+    { fn:'beep', args:[38, 0.4, 'sawtooth', 0.24], delay:80 },
+  ],
+  ui: [
+    { fn:'beep', args:[720, 0.05, 'triangle', 0.1] },
+    { fn:'beep', args:[1050, 0.04, 'sine', 0.08], delay:25 },
+  ],
+  power: [
+    { fn:'richTone', args:[440, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:600, filterEnd:3000, q:8}] },
+    { fn:'richTone', args:[660, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:900, filterEnd:4000, q:8}], delay:80 },
+    { fn:'richTone', args:[880, 0.15, {type:'triangle', type2:'square', mix:0.4, vol:0.15, filterStart:1400, filterEnd:5200, q:8}], delay:160 },
+  ],
+  combo: [
+    // Special: randomized pitch handled inline (kept as function for this one)
+    { fn:'dynamic', exec:()=> beep(800+Math.random()*500, 0.08, 'triangle', 0.13) },
+  ],
+  warn: [
+    { fn:'richTone', args:[200, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3}] },
+    { fn:'richTone', args:[180, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3}], delay:180 },
+  ],
+  wave: [
+    { fn:'noise', args:[0.6, 0.22, 400, -200] },
+    { fn:'beep', args:[160, 0.4, 'sawtooth', 0.22, -80] },
+  ],
+};
+const SFX_FUNCS = { beep, richTone, noise };
 function sfx(n){
-  // Trigger native haptics when running on device
+  // Native haptics pass-through (silent if not on device)
   try { if(window.nativeHaptic && window.nativeHaptic[n]) window.nativeHaptic[n](); } catch(e){}
+  const cfg = SFX_CONFIG[n];
+  if(!cfg) return;
   try{
-    if(n==='jump'){
-      richTone(300, 0.14, {type:'sawtooth', type2:'sine', octave:2, mix:0.4, vol:0.14, slide:250, filterStart:600, filterEnd:2200, q:6});
+    for(const step of cfg){
+      if(step.fn === 'dynamic'){
+        if(step.delay) setTimeout(step.exec, step.delay);
+        else step.exec();
+      } else {
+        const fn = SFX_FUNCS[step.fn];
+        if(!fn) continue;
+        if(step.delay) setTimeout(()=> fn(...step.args), step.delay);
+        else fn(...step.args);
+      }
     }
-    else if(n==='djump'){
-      richTone(500, 0.12, {type:'sawtooth', type2:'square', octave:2, mix:0.5, vol:0.13, slide:400, filterStart:900, filterEnd:3400, q:8});
-    }
-    else if(n==='coin'){
-      beep(1100, 0.06, 'triangle', 0.14);
-      setTimeout(()=>beep(1650, 0.08, 'triangle', 0.12), 45);
-    }
-    else if(n==='gem'){
-      richTone(1100, 0.1, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.15, filterStart:1500, filterEnd:3800});
-      setTimeout(()=>richTone(1650, 0.12, {type:'triangle', type2:'sine', octave:1.5, mix:0.5, vol:0.13, filterStart:2000, filterEnd:4500}), 55);
-      setTimeout(()=>richTone(2200, 0.15, {type:'sine', type2:'triangle', octave:2, mix:0.4, vol:0.1, filterStart:2500, filterEnd:5000}), 120);
-    }
-    else if(n==='water'){
-      richTone(480, 0.22, {type:'sine', type2:'sine', octave:2.5, mix:0.3, vol:0.16, slide:-220, filterStart:800, filterEnd:400, q:4});
-    }
-    else if(n==='ice'){
-      richTone(720, 0.16, {type:'triangle', type2:'square', octave:1.5, mix:0.25, vol:0.15, slide:350, filterStart:1200, filterEnd:3200, q:7});
-      setTimeout(()=>beep(1400, 0.1, 'sine', 0.08), 40);
-    }
-    else if(n==='hit'){
-      noise(0.25, 0.28, 1000, -600);
-      beep(120, 0.2, 'sawtooth', 0.22, -50);
-    }
-    else if(n==='stomp'){
-      noise(0.06, 0.18, 2500, -1500);
-      beep(210, 0.08, 'square', 0.2);
-      setTimeout(()=>beep(420, 0.1, 'square', 0.15), 45);
-    }
-    else if(n==='boom'){
-      noise(0.5, 0.35, 600, -400);
-      beep(65, 0.5, 'sawtooth', 0.3);
-      setTimeout(()=>beep(38, 0.4, 'sawtooth', 0.24), 80);
-    }
-    else if(n==='ui'){
-      beep(720, 0.05, 'triangle', 0.1);
-      setTimeout(()=>beep(1050, 0.04, 'sine', 0.08), 25);
-    }
-    else if(n==='power'){
-      richTone(440, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:600, filterEnd:3000, q:8});
-      setTimeout(()=>richTone(660, 0.1, {type:'sawtooth', type2:'square', mix:0.5, vol:0.15, filterStart:900, filterEnd:4000, q:8}), 80);
-      setTimeout(()=>richTone(880, 0.15, {type:'triangle', type2:'square', mix:0.4, vol:0.15, filterStart:1400, filterEnd:5200, q:8}), 160);
-    }
-    else if(n==='combo'){
-      beep(800+Math.random()*500, 0.08, 'triangle', 0.13);
-    }
-    else if(n==='warn'){
-      richTone(200, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3});
-      setTimeout(()=>richTone(180, 0.17, {type:'sawtooth', type2:'sawtooth', octave:1.02, mix:0.5, vol:0.2, filterStart:400, filterEnd:1200, q:3}), 180);
-    }
-    else if(n==='wave'){
-      noise(0.6, 0.22, 400, -200);
-      beep(160, 0.4, 'sawtooth', 0.22, -80);
-    }
-  }catch(e){}
+  } catch(e){}
 }
 
 // ============================================================================
@@ -396,6 +418,74 @@ const C = {
 };
 
 // ============================================================================
+//  GAME CONFIG — central tuning knobs. Edit here, not in spawn code.
+//  Referenced by spawners, collisions, and balance logic. Keep this in sync
+//  with the ENC encounter table (ENC defines LAYOUTS, CONFIG defines VALUES).
+// ============================================================================
+const CONFIG = {
+  // Player / HP
+  FUSE: {
+    max: 100,          // normal cap
+    overcharge: 120,   // hard cap (from mystery box, achievements, etc.)
+    rageBelow: 25,     // enter rage (screen tint red) below this
+    rageAbove: 30,     // exit rage above this
+    startBonus: 5,     // per level of startFuse upgrade
+  },
+  // Player movement
+  PLAYER: {
+    jumpV: 14.5,       // first jump velocity
+    doubleJumpV: 13,   // 2nd jump
+    tripleJumpV: 11.5, // 3rd jump
+    glideGrav: 0.18,   // gravity while gliding
+    poundV: 22,        // ground pound descent velocity
+    smashV: 26,        // smash item slam velocity
+    iframesHit: 30,    // i-frames after taking damage
+    iframesShield: 24, // i-frames after shield block
+    iframesRevive: 180,// 3s after revive
+  },
+  // Obstacle damage (hitting without shield/rocket)
+  DMG: {
+    coal: 15, spikes: 22, firepit: 25, chili: 20, saw: 30,
+    ember: 16, minibomb: 18, match: 18, ufo: 20, spikehead: 24,
+    bossWave: 18,
+  },
+  // Enemy reward (coins on stomp)
+  REWARD: {
+    ember: 2, minibomb: 5, match: 3, ufo: 6, spikehead: 0,
+  },
+  // Enemy velocity (horizontal, pre-speed adjustment)
+  ENEMY_VX: {
+    ember: -1.1, minibomb: -1.0, match: -0.7, ufo: -0.8, spikehead: -0.6,
+  },
+  // Spawn heights (relative to ground floor)
+  HEIGHTS: {
+    lowObst: 32,    // coal, spikes
+    midObst: 60,    // chili, firepit
+    enemy: 48,      // ember, minibomb
+    matchTall: 92,  // match (vertical alien)
+    spikehead: 60,
+    coinRow: 80,
+    coinMid: 130,
+    coinHigh: 170,
+    ufoAir: 300,    // ufo spawn altitude
+  },
+  // World progression
+  WORLD: {
+    length: 5000,    // meters per world before advancing (demo value; prod could be 50000)
+    maxIndex: 10,
+  },
+  // Particle / FX caps
+  FX: {
+    particleCap: 500,
+    ambientCap: 45,
+    shakeMax: 30,
+  },
+};
+// Keep backward-compat: some old code uses PARTICLE_CAP directly.
+// (Defined later near spawnBurst, points to CONFIG.FX.particleCap)
+const WORLD_LENGTH = CONFIG.WORLD.length;
+
+// ============================================================================
 //  DIFFICULTY + SKINS + UPGRADES
 // ============================================================================
 // Single balanced game config (World 1 baseline)
@@ -403,9 +493,8 @@ const GC = { base:2.3, max:4.0, accel:0.00028, drain:0.044, spawn:[1450,900], en
 
 // ============================================================================
 //  WORLDS — 10 themed worlds with escalating difficulty
-//  Advances every WORLD_LENGTH meters (5000m for demo; change to 50000 for prod)
+//  Advances every CONFIG.WORLD.length meters (see CONFIG above)
 // ============================================================================
-const WORLD_LENGTH = 5000;
 const WORLDS = [
   { // 1 — starter cosmic (-30% difficulty: extra casual)
     name:'Cosmic Dawn', emoji:'🌌',
@@ -1617,17 +1706,18 @@ function selectOrBuySkin(key){
 // ============================================================================
 //  UPDATE
 // ============================================================================
-function update(dt){
-  G.frame++; G.t += dt;
-  G.shake *= 0.88; G.flash *= 0.9;
-  G.transition = Math.min(1, G.transition + dt/400);
-
+// ============================================================================
+//  UPDATE SUB-PHASES — extracted from update() for clarity
+// ============================================================================
+function updateBackgroundAnims(dt){
+  // Star twinkle phase
   for(const s of G.bgStars) s.tw += 0.04;
+  // Clouds (parallax)
   for(const c of G.bgClouds){
     c.x -= c.s * (G.state==='play'?1.4:0.3);
     if(c.x + c.w < 0){ c.x = W + 20; c.y = 80+Math.random()*200; }
   }
-  // shooting stars (always animate)
+  // Shooting stars — random spawn + trail + fade
   if(Math.random() < 0.006){
     G.shootingStars.push({
       x: W + 30, y: rand(20, H*0.4),
@@ -1643,14 +1733,12 @@ function update(dt){
     s.life -= 0.010;
     if(s.life<=0 || s.x<-100) G.shootingStars.splice(i,1);
   }
-  // Ambient world-flavored particles (always-on atmosphere)
+  // Ambient world-flavored particles (snow W2, ember W3/W6, etc.)
   updateAmbient();
   // Foreground debris parallax
   for(const d of G.fgDebris){
     const ps = G.state==='play' ? (2.5 + G.speed*0.85) : 1.3;
-    d.x -= ps;
-    d.y += d.vy;
-    d.rot += d.vr;
+    d.x -= ps; d.y += d.vy; d.rot += d.vr;
     if(d.x < -d.s*3){
       d.x = W + d.s*2 + Math.random()*60;
       d.y = 80 + Math.random()*(H-180);
@@ -1660,6 +1748,15 @@ function update(dt){
       d.hue = Math.random()<0.5 ? '#4dd0ff' : '#ff4db8';
     }
   }
+}
+
+function update(dt){
+  G.frame++; G.t += dt;
+  G.shake *= 0.88; G.flash *= 0.9;
+  G.transition = Math.min(1, G.transition + dt/400);
+
+  // Background + ambient animations run in all states (menu, shop, play, gameover)
+  updateBackgroundAnims(dt);
   if(G.state==='menu'){ G.menuT += dt; return; }
   if(G.state==='shop' || G.state==='skins'){ G.menuT += dt; return; }
   if(G.state==='gameover'){
@@ -2921,75 +3018,80 @@ function drawBomb(bx, by, scale=1, expression='run', animBob=0, eyesLookX=0, eye
 // ============================================================================
 //  DRAW — ENEMIES
 // ============================================================================
+// ============================================================================
+//  SHARED DRAW HELPERS — reusable across drawEnemy / drawObstacle / drawBomb
+// ============================================================================
+// Soft contact shadow beneath sprite
+function softShadow(sx, sy, sw, alpha){
+  alpha = alpha === undefined ? 0.42 : alpha;
+  ctx.save();
+  const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw);
+  sg.addColorStop(0, `rgba(0,0,0,${alpha})`);
+  sg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sg;
+  ctx.beginPath(); ctx.ellipse(sx, sy, sw, sw*0.28, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+// Rim-light — thin bright arc opposite the main light
+function rimLight(x, y, r, color, arcStart, arcEnd){
+  color = color || 'rgba(255,255,255,0.55)';
+  arcStart = arcStart === undefined ? 0.15 : arcStart;
+  arcEnd = arcEnd === undefined ? 1.85 : arcEnd;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = r*0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y, r*0.94, Math.PI*arcStart, Math.PI*arcEnd); ctx.stroke();
+  ctx.restore();
+}
+// Specular highlight — top-left glossy dot
+function specular(x, y, rx, ry, alpha){
+  alpha = alpha === undefined ? 0.75 : alpha;
+  ctx.save();
+  const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+  g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+  g.addColorStop(0.5, `rgba(255,255,255,${alpha*0.3})`);
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, -0.5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+// Enemy telegraph — proximity charge glow (red for danger, cyan for stompable)
+function drawEnemyTelegraph(e, cx, by){
+  if(typeof B === 'undefined' || !B.alive) return;
+  if(e.x + e.w <= -50 || e.x - B.x >= 260) return; // off-screen early exit
+  const dx = (e.x + e.w/2) - B.x;
+  const dy = (e.y + e.h/2) - B.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const telegraphRange = 220;
+  if(dx <= 0 || dist >= telegraphRange) return;
+  const proximity = 1 - (dist/telegraphRange);
+  const charge = proximity * proximity;
+  const isDanger = !e.stomp;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const pulse = 0.7 + Math.sin(G.t*0.015)*0.3;
+  const color = isDanger ? 'rgba(255,60,40,' : 'rgba(80,220,255,';
+  const r = e.w*0.6 + charge * 20;
+  const tg = ctx.createRadialGradient(cx, by+e.h/2, e.w*0.3, cx, by+e.h/2, r);
+  tg.addColorStop(0, color + (charge*0.45*pulse).toFixed(2) + ')');
+  tg.addColorStop(1, color + '0)');
+  ctx.fillStyle = tg;
+  ctx.beginPath(); ctx.arc(cx, by+e.h/2, r, 0, Math.PI*2); ctx.fill();
+  if(charge > 0.5 && isDanger){
+    ctx.strokeStyle = `rgba(255,80,60,${charge*pulse*0.6})`;
+    ctx.lineWidth = 1.5;
+    const ringR = e.w*0.55 + Math.sin(G.t*0.04)*3;
+    ctx.beginPath(); ctx.arc(cx, by+e.h/2, ringR, 0, Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawEnemy(e){
   const cx = e.x + e.w/2;
   const by = e.y + (e.bobY||0);
-  // Hit flash (invincibility blink after damage)
   const hitFlash = (e.hitFlash && e.hitFlash > 0) ? e.hitFlash : 0;
-
-  // TELEGRAPH — proximity-based charge glow (stronger as player approaches)
-  // Dangerous (non-stompable) enemies get a red telegraph; stompable get a soft cyan one.
-  // Off-screen early-exit: skip distance calc for enemies not yet in telegraph range.
-  if(typeof B !== 'undefined' && B.alive && e.x + e.w > -50 && e.x - B.x < 260){
-    const dx = (e.x + e.w/2) - B.x;
-    const dy = (e.y + e.h/2) - B.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    const telegraphRange = 220;
-    if(dx > 0 && dist < telegraphRange){
-      const proximity = 1 - (dist/telegraphRange); // 0..1
-      const charge = proximity * proximity; // ease for dramatic ramp
-      const isDanger = !e.stomp;
-      ctx.save();
-      ctx.globalCompositeOperation='lighter';
-      const pulse = 0.7 + Math.sin(G.t*0.015)*0.3;
-      const color = isDanger ? 'rgba(255,60,40,' : 'rgba(80,220,255,';
-      const r = e.w*0.6 + charge * 20;
-      const tg = ctx.createRadialGradient(cx, by+e.h/2, e.w*0.3, cx, by+e.h/2, r);
-      tg.addColorStop(0, color + (charge*0.45*pulse).toFixed(2) + ')');
-      tg.addColorStop(1, color + '0)');
-      ctx.fillStyle = tg;
-      ctx.beginPath(); ctx.arc(cx, by+e.h/2, r, 0, Math.PI*2); ctx.fill();
-      // on very close (charge > 0.7) — draw sharp warning ring pulsing
-      if(charge > 0.5 && isDanger){
-        ctx.strokeStyle = `rgba(255,80,60,${charge*pulse*0.6})`;
-        ctx.lineWidth = 1.5;
-        const ringR = e.w*0.55 + Math.sin(G.t*0.04)*3;
-        ctx.beginPath(); ctx.arc(cx, by+e.h/2, ringR, 0, Math.PI*2); ctx.stroke();
-      }
-      ctx.restore();
-    }
-  }
-
-  // Soft contact shadow helper
-  const softShadow = (sx, sy, sw, alpha=0.42) => {
-    ctx.save();
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw);
-    sg.addColorStop(0, `rgba(0,0,0,${alpha})`);
-    sg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.ellipse(sx, sy, sw, sw*0.28, 0, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  };
-  // Rim-light helper — thin bright arc opposite the main light source
-  const rimLight = (x, y, r, color='rgba(255,255,255,0.55)', arcStart=0.15, arcEnd=1.85) => {
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = r*0.08;
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(x, y, r*0.94, Math.PI*arcStart, Math.PI*arcEnd); ctx.stroke();
-    ctx.restore();
-  };
-  // Specular highlight helper — bright glossy dot on top-left
-  const specular = (x, y, rx, ry, alpha=0.75) => {
-    ctx.save();
-    const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
-    g.addColorStop(0.5, `rgba(255,255,255,${alpha*0.3})`);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(x, y, rx, ry, -0.5, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  };
+  drawEnemyTelegraph(e, cx, by);
 
   // =======================================================================
   //  SPACE GRUB (ember) — gelatinous cosmic jelly blob, Apple-grade polish
@@ -3976,27 +4078,7 @@ function drawEnemy(e){
 // ============================================================================
 function drawObstacle(o){
   const cx = o.x + o.w/2, cy = o.y + o.h/2;
-
-  // Shared helpers (same quality bar as enemies)
-  const softShadow = (sx, sy, sw, alpha=0.42) => {
-    ctx.save();
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw);
-    sg.addColorStop(0, `rgba(0,0,0,${alpha})`);
-    sg.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.ellipse(sx, sy, sw, sw*0.28, 0, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  };
-  const specular = (x, y, rx, ry, alpha=0.75) => {
-    ctx.save();
-    const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
-    g.addColorStop(0.5, `rgba(255,255,255,${alpha*0.3})`);
-    g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(x, y, rx, ry, -0.5, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  };
+  // Helpers (softShadow, specular, rimLight) are module-level — shared with drawEnemy
 
   // =======================================================================
   //  CRYSTAL CLUSTER (was 'coal') — Polished 4-shard cluster with facets
