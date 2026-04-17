@@ -558,7 +558,7 @@ const G = window.G = {
   shake: 0, flash: 0, slowmo: 0,
   transition: 1,
   shield: 0, shieldMax: 0, shieldImpact: 0, magnet: 0, dbl: 0, rocket: 0, smash: 0,
-  obstacles: [], collects: [], particles: [], popups: [], bgStars: [], bgClouds: [], embers:[], enemies:[], shootingStars:[], asteroids:[], shockwaves:[], speedLines:[], fgDebris:[],
+  obstacles: [], collects: [], particles: [], popups: [], bgStars: [], bgClouds: [], embers:[], enemies:[], shootingStars:[], asteroids:[], shockwaves:[], speedLines:[], fgDebris:[], ambient:[],
   lastShockCombo: 0,
   // Stomp Fever mode
   fever: 0, feverActive: false, feverTimer: 0,
@@ -818,7 +818,9 @@ function roundRect(x,y,w,h,r){
   ctx.closePath();
 }
 function spawnBurst(x,y,color,n){
-  for(let i=0;i<n;i++){
+  // -20% spark count (rounded down, min 1)
+  const actualN = Math.max(1, Math.floor(n * 0.8));
+  for(let i=0;i<actualN;i++){
     G.particles.push({
       x,y, vx: rand(-4,4), vy: rand(-6,-1),
       life: 1, max: rand(25,45),
@@ -950,6 +952,295 @@ function spawnRunSparkle(x,y){
     color: Math.random()<0.5 ? 'rgba(255,77,184,0.7)' : 'rgba(77,208,255,0.7)',
     size: rand(1.5,2.8), g: 0.06, shape:'circle',
   });
+}
+
+// ============================================================================
+//  AMBIENT ENVIRONMENT PARTICLES — world-flavored atmosphere
+//  Types: stardust (all), snow (W2), ember (W3/W6), acid (W4), neon (W7)
+//         ice crystals (W2 accent), void whispers (W5), glow motes (W8)
+// ============================================================================
+function spawnAmbient(){
+  if(G.ambient.length > 60) return; // cap for perf
+  const w = G.world || 1;
+  const cw = currentWorld();
+  // Stardust — universal subtle floaters (all worlds)
+  if(Math.random() < 0.35){
+    G.ambient.push({
+      type:'stardust',
+      x: W + 10, y: rand(80, GND-40),
+      vx: rand(-0.9, -0.3), vy: rand(-0.15, 0.15),
+      size: rand(0.8, 1.8), life: 1, max: rand(280, 460),
+      color: Math.random()<0.5 ? 'rgba(255,230,200,' : 'rgba(200,220,255,',
+      phase: Math.random()*Math.PI*2,
+    });
+  }
+  // W2 — snow + ice shards
+  if(w===2 && Math.random() < 0.55){
+    G.ambient.push({
+      type:'snow',
+      x: rand(0, W), y: -10,
+      vx: rand(-0.8, -0.2), vy: rand(0.6, 1.4),
+      size: rand(1.5, 3.2), life: 1, max: rand(320, 520),
+      rot: rand(0, Math.PI*2), vr: rand(-0.04, 0.04),
+    });
+  }
+  // W3 / W6 — embers rising (fire worlds)
+  if((w===3 || w===6) && Math.random() < 0.5){
+    G.ambient.push({
+      type:'ember',
+      x: rand(0, W), y: GND - rand(-20, 40),
+      vx: rand(-1.6, -0.6), vy: rand(-1.0, -0.4),
+      size: rand(1.2, 2.6), life: 1, max: rand(150, 260),
+      phase: Math.random()*Math.PI*2,
+    });
+  }
+  // W4 — acid drops falling (+ upward bubbles)
+  if(w===4){
+    if(Math.random() < 0.35){
+      G.ambient.push({
+        type:'acid',
+        x: W + 20, y: rand(30, H*0.5),
+        vx: rand(-0.6, -0.2), vy: rand(1.8, 3.0),
+        size: rand(1.8, 3.2), life: 1, max: rand(180, 260),
+      });
+    }
+    if(Math.random() < 0.25){
+      G.ambient.push({
+        type:'bubble',
+        x: rand(0, W), y: GND - rand(-20, 30),
+        vx: rand(-0.8, -0.2), vy: rand(-0.8, -0.3),
+        size: rand(1.5, 3), life: 1, max: rand(220, 340),
+      });
+    }
+  }
+  // W5 — void whispers (faint fading wisps)
+  if(w===5 && Math.random() < 0.25){
+    G.ambient.push({
+      type:'void',
+      x: W + 10, y: rand(60, GND-40),
+      vx: rand(-1.1, -0.5), vy: rand(-0.3, 0.3),
+      size: rand(2, 5), life: 1, max: rand(200, 340),
+      phase: Math.random()*Math.PI*2,
+    });
+  }
+  // W7 — neon glitch (horizontal flickers + digital rain)
+  if(w===7){
+    if(Math.random() < 0.45){
+      G.ambient.push({
+        type:'neon',
+        x: W + 8, y: rand(40, GND-40),
+        vx: rand(-1.8, -0.8), vy: 0,
+        size: rand(8, 22), life: 1, max: rand(40, 90),
+        color: Math.random()<0.5 ? 'rgba(255,40,230,' : 'rgba(40,220,255,',
+        flicker: Math.random(),
+      });
+    }
+    if(Math.random() < 0.3){
+      G.ambient.push({
+        type:'digital',
+        x: rand(0, W), y: -5,
+        vx: 0, vy: rand(2.4, 4),
+        size: rand(1, 2), life: 1, max: rand(80, 140),
+        color: Math.random()<0.5 ? 'rgba(40,255,180,' : 'rgba(255,80,200,',
+      });
+    }
+  }
+  // W8 — glowing motes (deep sea jellies)
+  if(w===8 && Math.random() < 0.3){
+    G.ambient.push({
+      type:'mote',
+      x: W + 10, y: rand(100, GND-40),
+      vx: rand(-0.7, -0.3), vy: rand(-0.2, 0.2),
+      size: rand(2, 4), life: 1, max: rand(250, 380),
+      color: Math.random()<0.5 ? 'rgba(100,255,200,' : 'rgba(140,200,255,',
+      phase: Math.random()*Math.PI*2,
+    });
+  }
+  // W9 — ruby shards drifting
+  if(w===9 && Math.random() < 0.3){
+    G.ambient.push({
+      type:'ruby',
+      x: W + 10, y: rand(60, GND-40),
+      vx: rand(-1.4, -0.6), vy: rand(-0.2, 0.5),
+      size: rand(1.5, 3), life: 1, max: rand(160, 260),
+      rot: rand(0, Math.PI*2), vr: rand(-0.05, 0.05),
+    });
+  }
+  // W10 — golden sparks (royal endgame)
+  if(w===10 && Math.random() < 0.35){
+    G.ambient.push({
+      type:'golden',
+      x: W + 10, y: rand(40, GND-40),
+      vx: rand(-1.4, -0.6), vy: rand(-0.4, 0.1),
+      size: rand(1.5, 3.2), life: 1, max: rand(150, 260),
+      phase: Math.random()*Math.PI*2,
+    });
+  }
+}
+
+function updateAmbient(){
+  spawnAmbient();
+  for(let i=G.ambient.length-1; i>=0; i--){
+    const p = G.ambient[i];
+    p.x += p.vx; p.y += p.vy;
+    if(p.phase !== undefined) p.phase += 0.03;
+    if(p.rot !== undefined) p.rot += p.vr||0;
+    p.life -= 1/p.max;
+    // slight horizontal drift sway for floaters
+    if(p.type==='stardust' || p.type==='mote' || p.type==='golden' || p.type==='void'){
+      p.y += Math.sin(p.phase)*0.25;
+    }
+    if(p.type==='snow'){
+      p.x += Math.sin(G.t*0.003 + p.rot)*0.3; // wind drift
+    }
+    if(p.type==='ember'){
+      p.x += Math.sin(G.t*0.006 + p.phase)*0.4;
+    }
+    if(p.life<=0 || p.x<-30 || p.y>H+30 || p.y<-30) G.ambient.splice(i,1);
+  }
+}
+
+function drawAmbient(){
+  for(const p of G.ambient){
+    ctx.save();
+    const a = Math.max(0, Math.min(1, p.life)) * Math.min(1, (1-p.life)*4 + 0.4);
+    if(p.type==='stardust'){
+      ctx.globalAlpha = a*0.6;
+      const twink = 0.6 + Math.sin(p.phase)*0.4;
+      ctx.fillStyle = p.color + (twink*0.9).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='snow'){
+      ctx.globalAlpha = a;
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      // 6-pointed snowflake simplified as cross
+      ctx.strokeStyle = `rgba(240,250,255,${a})`;
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'round';
+      for(let i=0; i<3; i++){
+        const ang = i*Math.PI/3;
+        ctx.beginPath();
+        ctx.moveTo(-Math.cos(ang)*p.size, -Math.sin(ang)*p.size);
+        ctx.lineTo(Math.cos(ang)*p.size, Math.sin(ang)*p.size);
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.beginPath(); ctx.arc(0,0,p.size*0.3,0,Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='ember'){
+      ctx.globalCompositeOperation='lighter';
+      const pulse = 0.7 + Math.sin(p.phase)*0.3;
+      const r = p.size * pulse;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*3);
+      g.addColorStop(0, `rgba(255,200,80,${a*0.9})`);
+      g.addColorStop(0.5, `rgba(255,120,40,${a*0.5})`);
+      g.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*2.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,240,180,${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*0.45, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='acid'){
+      ctx.globalAlpha = a*0.8;
+      // teardrop
+      ctx.fillStyle = 'rgba(160,255,80,0.9)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, p.size*0.7, p.size*1.3, 0, 0, Math.PI*2);
+      ctx.fill();
+      // glow
+      ctx.globalCompositeOperation='lighter';
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*2);
+      g.addColorStop(0, `rgba(180,255,100,${a*0.6})`);
+      g.addColorStop(1, 'rgba(180,255,100,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*2, 0, Math.PI*2); ctx.fill();
+      // highlight
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle = `rgba(255,255,255,${a*0.8})`;
+      ctx.beginPath(); ctx.arc(p.x-p.size*0.2, p.y-p.size*0.4, p.size*0.3, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='bubble'){
+      ctx.globalAlpha = a*0.5;
+      ctx.strokeStyle = 'rgba(200,255,200,0.7)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.beginPath(); ctx.arc(p.x-p.size*0.3, p.y-p.size*0.3, p.size*0.25, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='void'){
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha = a*0.5;
+      const wisp = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*4);
+      wisp.addColorStop(0, 'rgba(220,200,255,0.4)');
+      wisp.addColorStop(1, 'rgba(180,160,220,0)');
+      ctx.fillStyle = wisp;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size*4, p.size*1.5, Math.sin(p.phase)*0.4, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='neon'){
+      ctx.globalCompositeOperation='lighter';
+      const flk = p.flicker < 0.7 ? 1 : Math.sin(G.t*0.1+p.flicker*10)*0.5+0.5;
+      ctx.globalAlpha = a*flk;
+      ctx.strokeStyle = p.color + `${(a*0.8).toFixed(2)})`;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x+p.size, p.y); ctx.stroke();
+      // glow
+      ctx.strokeStyle = p.color + `${(a*0.3).toFixed(2)})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x+p.size, p.y); ctx.stroke();
+    }
+    else if(p.type==='digital'){
+      ctx.globalAlpha = a*0.8;
+      ctx.fillStyle = p.color + `${a.toFixed(2)})`;
+      ctx.fillRect(p.x, p.y, 1, p.size*3);
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = p.color + `${(a*0.3).toFixed(2)})`;
+      ctx.fillRect(p.x-1, p.y, 3, p.size*3);
+    }
+    else if(p.type==='mote'){
+      ctx.globalCompositeOperation='lighter';
+      const pulse = 0.6 + Math.sin(p.phase)*0.4;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*3);
+      g.addColorStop(0, p.color + `${(a*pulse).toFixed(2)})`);
+      g.addColorStop(1, p.color + '0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*3, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,'+(a*pulse).toFixed(2)+')';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*0.5, 0, Math.PI*2); ctx.fill();
+    }
+    else if(p.type==='ruby'){
+      ctx.globalAlpha = a;
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = 'rgba(255,60,100,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(0, -p.size);
+      ctx.lineTo(p.size, 0);
+      ctx.lineTo(0, p.size);
+      ctx.lineTo(-p.size, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.beginPath();
+      ctx.moveTo(0, -p.size);
+      ctx.lineTo(p.size*0.3, -p.size*0.3);
+      ctx.lineTo(-p.size*0.3, -p.size*0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    else if(p.type==='golden'){
+      ctx.globalCompositeOperation='lighter';
+      const pulse = 0.6 + Math.sin(p.phase)*0.4;
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*3);
+      g.addColorStop(0, `rgba(255,230,90,${a*0.9})`);
+      g.addColorStop(0.5, `rgba(255,180,40,${a*0.4})`);
+      g.addColorStop(1, 'rgba(255,140,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*3*pulse, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(255,255,220,${a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*0.45, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 // ============================================================================
@@ -1293,6 +1584,8 @@ function update(dt){
     s.life -= 0.010;
     if(s.life<=0 || s.x<-100) G.shootingStars.splice(i,1);
   }
+  // Ambient world-flavored particles (always-on atmosphere)
+  updateAmbient();
   // Foreground debris parallax
   for(const d of G.fgDebris){
     const ps = G.state==='play' ? (2.5 + G.speed*0.85) : 1.3;
@@ -1786,12 +2079,29 @@ function update(dt){
     if(B.iframes>0 || !B.alive || B.pounding){ continue; }
     const interaction = checkEnemyInteract(B, e);
     if(interaction==='stomp' && e.stomp){
-      // STOMP KILL!
+      // STOMP KILL — explode with ring shockwave + debris + screen shake
       e.dying = true;
       B.vy = -13;
       B.grounded = false;
       sfx('stomp');
+      // expanding impact ring at enemy center
+      G.shockwaves.push({x:e.x+e.w/2, y:e.y+e.h/2, r:8, maxR:90, life:1, color:e.color||'#fff3a0'});
+      // main body explosion particles
       spawnBurst(e.x+e.w/2, e.y+e.h/2, e.color||C.fire, 18);
+      // debris chunks (rect particles fly outward with gravity)
+      for(let k=0; k<8; k++){
+        const ang = (k/8)*Math.PI*2 + rand(-0.15, 0.15);
+        const spd = rand(3, 7);
+        G.particles.push({
+          x: e.x+e.w/2, y: e.y+e.h/2,
+          vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd - 2,
+          life: 1, max: rand(28, 42),
+          color: e.color || '#ffffff',
+          size: rand(2.5, 4.5), g: 0.25,
+          shape: 'rect', rot: rand(0, 6.28), vr: rand(-0.45, 0.45),
+        });
+      }
+      G.shake = Math.max(G.shake, 5);
       B.stompChain++;
       G.runStomps = (G.runStomps||0) + 1;
       // cartoon "BONK!" popup + impact star burst
@@ -2485,6 +2795,39 @@ function drawEnemy(e){
   const by = e.y + (e.bobY||0);
   // Hit flash (invincibility blink after damage)
   const hitFlash = (e.hitFlash && e.hitFlash > 0) ? e.hitFlash : 0;
+
+  // TELEGRAPH — proximity-based charge glow (stronger as player approaches)
+  // Dangerous (non-stompable) enemies get a red telegraph; stompable get a soft cyan one.
+  if(typeof B !== 'undefined' && B.alive){
+    const dx = (e.x + e.w/2) - B.x;
+    const dy = (e.y + e.h/2) - B.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const telegraphRange = 220;
+    if(dx > 0 && dist < telegraphRange){
+      const proximity = 1 - (dist/telegraphRange); // 0..1
+      const charge = proximity * proximity; // ease for dramatic ramp
+      const isDanger = !e.stomp;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const pulse = 0.7 + Math.sin(G.t*0.015)*0.3;
+      const color = isDanger ? 'rgba(255,60,40,' : 'rgba(80,220,255,';
+      const r = e.w*0.6 + charge * 20;
+      const tg = ctx.createRadialGradient(cx, by+e.h/2, e.w*0.3, cx, by+e.h/2, r);
+      tg.addColorStop(0, color + (charge*0.45*pulse).toFixed(2) + ')');
+      tg.addColorStop(1, color + '0)');
+      ctx.fillStyle = tg;
+      ctx.beginPath(); ctx.arc(cx, by+e.h/2, r, 0, Math.PI*2); ctx.fill();
+      // on very close (charge > 0.7) — draw sharp warning ring pulsing
+      if(charge > 0.5 && isDanger){
+        ctx.strokeStyle = `rgba(255,80,60,${charge*pulse*0.6})`;
+        ctx.lineWidth = 1.5;
+        const ringR = e.w*0.55 + Math.sin(G.t*0.04)*3;
+        ctx.beginPath(); ctx.arc(cx, by+e.h/2, ringR, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
   // Soft contact shadow helper
   const softShadow = (sx, sy, sw, alpha=0.42) => {
     ctx.save();
@@ -4013,42 +4356,127 @@ function drawCollectible(c){
   ctx.restore();
 
   if(c.kind==='coin'){
-    // SPARK — identical style to Bombița's fuse-tip spark
-    const pulseScale = 1 + Math.sin(G.t*0.015+c.t)*0.08;
-    const sparkSize = c.r*0.35 + Math.sin(G.t*0.03+c.t)*c.r*0.12;
+    // -------- 3D ROTATING METALLIC COIN (Apple-grade) --------
+    // Rotation angle drives width compression for 3D face/edge effect
+    const rotA = G.t*0.004 + c.t;
+    const cosA = Math.cos(rotA);
+    const absC = Math.abs(cosA);
+    const widthScale = absC;      // 0 = edge view, 1 = full face
+    const W2 = c.r * widthScale;  // horizontal radius
 
-    // Soft radial glow (additive)
+    // Edge thickness — visible when rotated sideways
+    const edgeThickness = c.r * 0.18;
+
+    // Back-face shadow (when coin flips, show dark underside briefly at edge)
+    // Only render if we're past "edge" moment
+    if(absC > 0.05){
+      // === FRONT FACE ===
+      // Face gradient — metallic gold with radial highlight
+      const isHeads = cosA > 0;
+      ctx.save();
+      // Edge ring (dark rim around the coin face)
+      const edgeG = ctx.createLinearGradient(0, -c.r, 0, c.r);
+      edgeG.addColorStop(0, '#8a5c12');
+      edgeG.addColorStop(0.5, '#ffea8a');
+      edgeG.addColorStop(1, '#5a3a08');
+      ctx.fillStyle = edgeG;
+      ctx.beginPath(); ctx.ellipse(0, 0, W2+1.2, c.r+1.2, 0, 0, Math.PI*2); ctx.fill();
+      // Face metallic gradient (warm gold with subtle sheen band)
+      const faceG = ctx.createRadialGradient(-W2*0.35, -c.r*0.4, c.r*0.1, 0, 0, c.r);
+      faceG.addColorStop(0,    '#fff4b0');
+      faceG.addColorStop(0.25, '#ffe060');
+      faceG.addColorStop(0.55, '#ffc030');
+      faceG.addColorStop(0.85, '#c8821a');
+      faceG.addColorStop(1,    '#6a4408');
+      ctx.fillStyle = faceG;
+      ctx.beginPath(); ctx.ellipse(0, 0, W2, c.r, 0, 0, Math.PI*2); ctx.fill();
+
+      // Rotating sheen band (vertical streak moving across face)
+      ctx.save();
+      ctx.beginPath(); ctx.ellipse(0, 0, W2, c.r, 0, 0, Math.PI*2); ctx.clip();
+      ctx.globalCompositeOperation='lighter';
+      const sheenX = Math.sin(G.t*0.004 + c.t*0.5) * W2 * 0.8;
+      const sheenG = ctx.createLinearGradient(sheenX-W2*0.35, 0, sheenX+W2*0.35, 0);
+      sheenG.addColorStop(0, 'rgba(255,255,255,0)');
+      sheenG.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+      sheenG.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheenG;
+      ctx.fillRect(-W2, -c.r, W2*2, c.r*2);
+      ctx.restore();
+
+      // Face symbol — star on heads, "$" on tails (conceptual A/B sides)
+      ctx.save();
+      ctx.translate(0, 0);
+      ctx.scale(widthScale, 1);
+      if(isHeads){
+        // 5-point star
+        ctx.fillStyle = '#8a5a10';
+        ctx.beginPath();
+        for(let i=0;i<10;i++){
+          const a = (i/10)*Math.PI*2 - Math.PI/2;
+          const rr = i%2===0 ? c.r*0.48 : c.r*0.22;
+          const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+          if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.closePath(); ctx.fill();
+        // inner shine
+        ctx.fillStyle = '#fff3a0';
+        ctx.beginPath();
+        for(let i=0;i<10;i++){
+          const a = (i/10)*Math.PI*2 - Math.PI/2;
+          const rr = i%2===0 ? c.r*0.3 : c.r*0.14;
+          const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+          if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.closePath(); ctx.fill();
+      } else {
+        // ✦ burst (tails side)
+        ctx.strokeStyle = '#8a5a10'; ctx.lineWidth = 2.2; ctx.lineCap='round';
+        for(let i=0;i<4;i++){
+          const a = (i/4)*Math.PI*2 + Math.PI/4;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a)*c.r*0.15, Math.sin(a)*c.r*0.15);
+          ctx.lineTo(Math.cos(a)*c.r*0.48, Math.sin(a)*c.r*0.48);
+          ctx.stroke();
+        }
+        ctx.fillStyle = '#fff3a0';
+        ctx.beginPath(); ctx.arc(0,0, c.r*0.16, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+
+      // Top-left specular highlight on face
+      ctx.save();
+      ctx.beginPath(); ctx.ellipse(0, 0, W2, c.r, 0, 0, Math.PI*2); ctx.clip();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.beginPath(); ctx.ellipse(-W2*0.38, -c.r*0.42, W2*0.22, c.r*0.18, -0.4, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      // Face outline
+      ctx.strokeStyle = 'rgba(80,45,6,0.85)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.ellipse(0, 0, W2, c.r, 0, 0, Math.PI*2); ctx.stroke();
+      ctx.restore();
+    } else {
+      // === PURE EDGE VIEW (coin is perpendicular — shows thin slice) ===
+      const edgeG = ctx.createLinearGradient(-edgeThickness, 0, edgeThickness, 0);
+      edgeG.addColorStop(0, '#5a3a08');
+      edgeG.addColorStop(0.5, '#ffd060');
+      edgeG.addColorStop(1, '#5a3a08');
+      ctx.fillStyle = edgeG;
+      roundRect(-edgeThickness, -c.r, edgeThickness*2, c.r*2, edgeThickness); ctx.fill();
+      ctx.strokeStyle = '#3a2406'; ctx.lineWidth = 1;
+      roundRect(-edgeThickness, -c.r, edgeThickness*2, c.r*2, edgeThickness); ctx.stroke();
+    }
+
+    // Global soft outer glow (yellow/gold — additive)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const sg = ctx.createRadialGradient(0, 0, 0, 0, 0, c.r*1.4);
-    sg.addColorStop(0, 'rgba(255,180,71,0.95)');
-    sg.addColorStop(0.5, 'rgba(255,120,40,0.45)');
-    sg.addColorStop(1, 'rgba(255,120,40,0)');
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.arc(0, 0, c.r*1.4, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-
-    // 8 rotating rays — classic spark asterisk pattern
-    ctx.save();
-    ctx.scale(pulseScale, pulseScale);
-    ctx.strokeStyle = C.spark; // '#ff7730'
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    const rays = 8;
-    for(let i=0;i<rays;i++){
-      const a = (i/rays)*Math.PI*2 + G.t*0.005 + c.t;
-      const outer = sparkSize + (i%2 ? c.r*0.25 : c.r*0.08);
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a)*c.r*0.18, Math.sin(a)*c.r*0.18);
-      ctx.lineTo(Math.cos(a)*(outer+c.r*0.35), Math.sin(a)*(outer+c.r*0.35));
-      ctx.stroke();
-    }
-    // Hot core (sparkHot orange-yellow)
-    ctx.fillStyle = C.sparkHot; // '#ffb347'
-    ctx.beginPath(); ctx.arc(0, 0, c.r*0.28, 0, Math.PI*2); ctx.fill();
-    // White-hot inner
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(0, 0, c.r*0.14, 0, Math.PI*2); ctx.fill();
+    const gg = ctx.createRadialGradient(0, 0, c.r*0.8, 0, 0, c.r*1.7);
+    gg.addColorStop(0, 'rgba(255,220,120,0.35)');
+    gg.addColorStop(1, 'rgba(255,180,40,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(0, 0, c.r*1.7, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
   else if(c.kind==='gem'){
@@ -4364,6 +4792,347 @@ function drawCollectible(c){
 // ============================================================================
 //  DRAW — WORLD
 // ============================================================================
+// ============================================================================
+//  MID-DEPTH PARALLAX — world-unique background silhouettes + structures
+// ============================================================================
+function drawWorldParallax(){
+  const wIdx = (G.state==='play' || G.state==='gameover') ? (G.world||1) : 1;
+  const ox = (G.distance*0.22) % W;  // medium parallax speed
+  ctx.save();
+
+  // W1 — COSMIC — distant nebulae planets of various sizes
+  if(wIdx===1){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      // big planet silhouettes with glow
+      for(const p of [{x:W*0.2, y:H*0.48, r:38, c:'#3a1870'}, {x:W*0.55, y:H*0.40, r:26, c:'#6a2aa0'}, {x:W*0.85, y:H*0.50, r:32, c:'#2a1260'}]){
+        const px = xo + p.x;
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        const gl = ctx.createRadialGradient(px, p.y, p.r*0.5, px, p.y, p.r*1.8);
+        gl.addColorStop(0, 'rgba(255,140,220,0.25)');
+        gl.addColorStop(1, 'rgba(180,80,220,0)');
+        ctx.fillStyle = gl;
+        ctx.beginPath(); ctx.arc(px, p.y, p.r*1.8, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+        // planet silhouette
+        const pg = ctx.createRadialGradient(px-p.r*0.3, p.y-p.r*0.3, 2, px, p.y, p.r);
+        pg.addColorStop(0, p.c);
+        pg.addColorStop(1, 'rgba(10,5,20,0.9)');
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(px, p.y, p.r, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+  // W2 — ICE SPIRES (jagged crystalline peaks)
+  else if(wIdx===2){
+    const spireCol1 = 'rgba(140,200,240,0.75)';
+    const spireCol2 = 'rgba(80,140,200,0.85)';
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const spires = [
+        {x:30, h:180, w:60}, {x:110, h:230, w:70}, {x:210, h:200, w:55},
+        {x:290, h:260, w:80}, {x:380, h:190, w:50}, {x:460, h:220, w:65},
+      ];
+      for(const s of spires){
+        const sx = xo + s.x;
+        const sg = ctx.createLinearGradient(sx, H*0.55 - s.h, sx, H*0.55);
+        sg.addColorStop(0, spireCol1);
+        sg.addColorStop(0.7, spireCol2);
+        sg.addColorStop(1, 'rgba(30,60,100,0.95)');
+        ctx.fillStyle = sg;
+        ctx.beginPath();
+        ctx.moveTo(sx, H*0.55);
+        ctx.lineTo(sx + s.w*0.35, H*0.55 - s.h*0.7);
+        ctx.lineTo(sx + s.w*0.5, H*0.55 - s.h);
+        ctx.lineTo(sx + s.w*0.65, H*0.55 - s.h*0.6);
+        ctx.lineTo(sx + s.w, H*0.55);
+        ctx.closePath(); ctx.fill();
+        // snow peak highlight
+        ctx.fillStyle = 'rgba(240,250,255,0.7)';
+        ctx.beginPath();
+        ctx.moveTo(sx + s.w*0.4, H*0.55 - s.h*0.85);
+        ctx.lineTo(sx + s.w*0.5, H*0.55 - s.h);
+        ctx.lineTo(sx + s.w*0.6, H*0.55 - s.h*0.8);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+  }
+  // W3 — VOLCANIC PEAKS with glowing lava at base
+  else if(wIdx===3){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const peaks = [
+        {x:20, h:210, w:140}, {x:170, h:260, w:160}, {x:340, h:190, w:130}, {x:470, h:240, w:150},
+      ];
+      for(const p of peaks){
+        const sx = xo + p.x;
+        const pg = ctx.createLinearGradient(sx, H*0.55 - p.h, sx, H*0.55);
+        pg.addColorStop(0, 'rgba(80,20,10,0.9)');
+        pg.addColorStop(0.5, 'rgba(120,30,20,0.85)');
+        pg.addColorStop(1, 'rgba(200,60,20,0.7)');
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.moveTo(sx, H*0.55);
+        ctx.lineTo(sx + p.w*0.3, H*0.55 - p.h*0.6);
+        ctx.lineTo(sx + p.w*0.48, H*0.55 - p.h);
+        ctx.lineTo(sx + p.w*0.62, H*0.55 - p.h*0.75);
+        ctx.lineTo(sx + p.w, H*0.55);
+        ctx.closePath(); ctx.fill();
+        // lava glow at crater
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        const lg = ctx.createRadialGradient(sx + p.w*0.48, H*0.55 - p.h, 0, sx + p.w*0.48, H*0.55 - p.h, 18);
+        lg.addColorStop(0, 'rgba(255,200,80,0.9)');
+        lg.addColorStop(1, 'rgba(255,100,20,0)');
+        ctx.fillStyle = lg;
+        ctx.beginPath(); ctx.arc(sx + p.w*0.48, H*0.55 - p.h, 18, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+  // W4 — GIANT MUSHROOM TREES
+  else if(wIdx===4){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const shrooms = [
+        {x:50, cap:44, stem:110}, {x:180, cap:60, stem:140}, {x:310, cap:50, stem:120}, {x:430, cap:70, stem:160},
+      ];
+      for(const s of shrooms){
+        const sx = xo + s.x;
+        const baseY = H*0.55;
+        // stem
+        ctx.fillStyle = 'rgba(220,220,190,0.85)';
+        roundRect(sx-8, baseY - s.stem, 16, s.stem, 4); ctx.fill();
+        // cap
+        const cg = ctx.createRadialGradient(sx, baseY-s.stem, 5, sx, baseY-s.stem, s.cap);
+        cg.addColorStop(0, 'rgba(180,255,100,0.95)');
+        cg.addColorStop(0.7, 'rgba(100,180,50,0.95)');
+        cg.addColorStop(1, 'rgba(40,90,20,0.95)');
+        ctx.fillStyle = cg;
+        ctx.beginPath(); ctx.arc(sx, baseY-s.stem, s.cap, Math.PI, Math.PI*2); ctx.fill();
+        ctx.fillRect(sx-s.cap, baseY-s.stem, s.cap*2, 5);
+        // yellow spore dots on cap
+        ctx.fillStyle = 'rgba(255,240,120,0.85)';
+        for(let k=-2; k<=2; k++){
+          ctx.beginPath(); ctx.arc(sx + k*s.cap*0.35, baseY-s.stem-s.cap*0.4, 3, 0, Math.PI*2); ctx.fill();
+        }
+      }
+    }
+  }
+  // W5 — VOID MONOLITHS (black obelisks with faint glow)
+  else if(wIdx===5){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const obe = [{x:80,h:260,w:30},{x:220,h:200,w:24},{x:340,h:280,w:36},{x:470,h:220,w:28}];
+      for(const o of obe){
+        const sx = xo + o.x;
+        ctx.fillStyle = 'rgba(10,8,18,0.95)';
+        ctx.beginPath();
+        ctx.moveTo(sx, H*0.55);
+        ctx.lineTo(sx + o.w*0.3, H*0.55 - o.h*0.9);
+        ctx.lineTo(sx + o.w*0.5, H*0.55 - o.h);
+        ctx.lineTo(sx + o.w*0.7, H*0.55 - o.h*0.9);
+        ctx.lineTo(sx + o.w, H*0.55);
+        ctx.closePath(); ctx.fill();
+        // faint rune glow
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        ctx.strokeStyle = `rgba(200,200,255,${0.3 + Math.sin(G.t*0.005+o.x)*0.2})`;
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(sx + o.w*0.3, H*0.55 - o.h*0.5);
+        ctx.lineTo(sx + o.w*0.7, H*0.55 - o.h*0.5);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(sx + o.w*0.5, H*0.55 - o.h*0.65, 4, 0, Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+  // W6 — SOLAR RUINS (broken stone arches with lava seam)
+  else if(wIdx===6){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const arches = [{x:60, h:180, w:90}, {x:220, h:220, w:110}, {x:380, h:160, w:80}];
+      for(const a of arches){
+        const sx = xo + a.x;
+        ctx.fillStyle = 'rgba(120,60,20,0.9)';
+        // left pillar
+        ctx.fillRect(sx, H*0.55-a.h, a.w*0.18, a.h);
+        // right pillar
+        ctx.fillRect(sx+a.w*0.82, H*0.55-a.h, a.w*0.18, a.h);
+        // top arch (broken)
+        ctx.beginPath();
+        ctx.moveTo(sx, H*0.55-a.h);
+        ctx.quadraticCurveTo(sx+a.w/2, H*0.55-a.h-20, sx+a.w, H*0.55-a.h);
+        ctx.lineTo(sx+a.w, H*0.55-a.h+12);
+        ctx.quadraticCurveTo(sx+a.w/2, H*0.55-a.h-8, sx, H*0.55-a.h+12);
+        ctx.closePath(); ctx.fill();
+        // lava seam in middle
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        ctx.strokeStyle = 'rgba(255,180,50,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(sx+a.w*0.1, H*0.55-a.h*0.4);
+        ctx.lineTo(sx+a.w*0.25, H*0.55-a.h*0.2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+  // W7 — CYBER TOWERS with LED arrays
+  else if(wIdx===7){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const towers = [
+        {x:30, h:280, w:50}, {x:110, h:350, w:40}, {x:180, h:260, w:60},
+        {x:280, h:380, w:45}, {x:360, h:300, w:52}, {x:440, h:340, w:58},
+      ];
+      for(const t of towers){
+        const sx = xo + t.x;
+        // tower body (dark cyber)
+        const tg = ctx.createLinearGradient(sx, H*0.55-t.h, sx+t.w, H*0.55-t.h);
+        tg.addColorStop(0, 'rgba(15,10,40,0.95)');
+        tg.addColorStop(0.5, 'rgba(40,20,80,0.95)');
+        tg.addColorStop(1, 'rgba(10,8,30,0.95)');
+        ctx.fillStyle = tg;
+        ctx.fillRect(sx, H*0.55-t.h, t.w, t.h);
+        // antenna spike on top
+        ctx.fillStyle = 'rgba(15,10,40,0.95)';
+        ctx.beginPath();
+        ctx.moveTo(sx+t.w*0.45, H*0.55-t.h);
+        ctx.lineTo(sx+t.w*0.5, H*0.55-t.h-16);
+        ctx.lineTo(sx+t.w*0.55, H*0.55-t.h);
+        ctx.closePath(); ctx.fill();
+        // antenna LED
+        const antBlink = Math.sin(G.t*0.015 + sx) > 0;
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        if(antBlink){
+          const ag = ctx.createRadialGradient(sx+t.w*0.5, H*0.55-t.h-16, 0, sx+t.w*0.5, H*0.55-t.h-16, 6);
+          ag.addColorStop(0, 'rgba(255,40,220,0.9)');
+          ag.addColorStop(1, 'rgba(255,40,220,0)');
+          ctx.fillStyle = ag;
+          ctx.beginPath(); ctx.arc(sx+t.w*0.5, H*0.55-t.h-16, 6, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+        // window LEDs (grid)
+        const rows = Math.floor(t.h / 18);
+        const cols = Math.max(2, Math.floor(t.w / 10));
+        for(let r=0; r<rows; r++){
+          for(let c=0; c<cols; c++){
+            const lit = ((r*7 + c*3 + Math.floor(G.t*0.002))%7) < 3;
+            const lx = sx + 4 + c*((t.w-8)/Math.max(1,cols-1));
+            const ly = H*0.55-t.h + 10 + r*16;
+            if(lit){
+              ctx.fillStyle = (r+c)%2===0 ? 'rgba(100,230,255,0.9)' : 'rgba(255,80,200,0.85)';
+              ctx.fillRect(lx-1.5, ly-1, 3, 2);
+              ctx.save();
+              ctx.globalCompositeOperation='lighter';
+              ctx.fillStyle = (r+c)%2===0 ? 'rgba(100,230,255,0.35)' : 'rgba(255,80,200,0.3)';
+              ctx.fillRect(lx-3, ly-2, 6, 4);
+              ctx.restore();
+            }
+          }
+        }
+      }
+    }
+  }
+  // W8 — KELP FOREST / CORAL SILHOUETTES
+  else if(wIdx===8){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      for(let k=0; k<6; k++){
+        const sx = xo + 20 + k*90;
+        ctx.strokeStyle = 'rgba(30,100,110,0.7)';
+        ctx.lineWidth = 6;
+        ctx.lineCap='round';
+        ctx.beginPath();
+        ctx.moveTo(sx, H*0.55);
+        const sway = Math.sin(G.t*0.003 + k)*12;
+        ctx.quadraticCurveTo(sx+sway*0.5, H*0.55-90, sx+sway, H*0.55-180);
+        ctx.stroke();
+        // coral branch
+        ctx.strokeStyle = 'rgba(60,140,140,0.6)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(sx+sway*0.5, H*0.55-90);
+        ctx.lineTo(sx+sway*0.5+12, H*0.55-105);
+        ctx.stroke();
+      }
+    }
+  }
+  // W9 — RUBY CRYSTAL CLUSTERS
+  else if(wIdx===9){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const clusters = [{x:60,h:180,w:60},{x:200,h:240,w:80},{x:350,h:200,w:70},{x:460,h:220,w:75}];
+      for(const c of clusters){
+        const sx = xo + c.x;
+        for(let k=0; k<4; k++){
+          const kx = sx + k*c.w*0.22;
+          const kh = c.h * (0.6 + (k%2)*0.35);
+          const cg = ctx.createLinearGradient(kx, H*0.55-kh, kx, H*0.55);
+          cg.addColorStop(0, 'rgba(255,100,140,0.85)');
+          cg.addColorStop(0.6, 'rgba(180,30,70,0.9)');
+          cg.addColorStop(1, 'rgba(60,10,20,0.95)');
+          ctx.fillStyle = cg;
+          ctx.beginPath();
+          ctx.moveTo(kx-8, H*0.55);
+          ctx.lineTo(kx, H*0.55-kh);
+          ctx.lineTo(kx+8, H*0.55);
+          ctx.closePath(); ctx.fill();
+          // highlight edge
+          ctx.strokeStyle = 'rgba(255,180,200,0.6)';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          ctx.moveTo(kx-6, H*0.55-4);
+          ctx.lineTo(kx-1, H*0.55-kh+4);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+  // W10 — GOLDEN PALACE PEAKS (ornate silhouettes)
+  else if(wIdx===10){
+    for(let i=-1; i<=1; i++){
+      const xo = i*W - ox;
+      const palaces = [{x:30,h:220,w:120},{x:180,h:280,w:150},{x:360,h:240,w:130}];
+      for(const p of palaces){
+        const sx = xo + p.x;
+        ctx.fillStyle = 'rgba(80,50,10,0.92)';
+        ctx.fillRect(sx, H*0.55-p.h*0.7, p.w, p.h*0.7);
+        // dome on top
+        ctx.beginPath();
+        ctx.ellipse(sx+p.w/2, H*0.55-p.h*0.7, p.w*0.35, p.h*0.25, 0, Math.PI, Math.PI*2);
+        ctx.fill();
+        // spire
+        ctx.beginPath();
+        ctx.moveTo(sx+p.w*0.45, H*0.55-p.h*0.95);
+        ctx.lineTo(sx+p.w/2, H*0.55-p.h);
+        ctx.lineTo(sx+p.w*0.55, H*0.55-p.h*0.95);
+        ctx.closePath(); ctx.fill();
+        // spire LED
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        const sg = ctx.createRadialGradient(sx+p.w/2, H*0.55-p.h, 0, sx+p.w/2, H*0.55-p.h, 8);
+        sg.addColorStop(0, 'rgba(255,240,120,0.9)');
+        sg.addColorStop(1, 'rgba(255,220,80,0)');
+        ctx.fillStyle = sg;
+        ctx.beginPath(); ctx.arc(sx+p.w/2, H*0.55-p.h, 8, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+        // golden outline
+        ctx.strokeStyle = 'rgba(255,200,80,0.5)';
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(sx, H*0.55-p.h*0.7, p.w, p.h*0.7);
+      }
+    }
+  }
+  ctx.restore();
+}
+
 function drawBackground(){
   const cw = (G.state==='play' || G.state==='gameover') ? currentWorld() : WORLDS[0];
   // Deep space gradient — per-world colors
@@ -4577,6 +5346,12 @@ function drawBackground(){
     ctx.restore();
   }
 
+  // --- MID-DEPTH PARALLAX STRUCTURES (per-world) ---
+  // Rendered between the starfield and the foreground dunes, at medium parallax speed
+  if(!G.rage && !G.bossActive){
+    drawWorldParallax();
+  }
+
   // --- FAR DUNES (former mountains, now alien terrain) ---
   ctx.save();
   const ox = (G.distance*0.1)%W;
@@ -4623,6 +5398,7 @@ function drawBackground(){
 
 function drawGround(){
   const cw = (G.state==='play' || G.state==='gameover') ? currentWorld() : WORLDS[0];
+  const wIdx = (G.state==='play' || G.state==='gameover') ? (G.world||1) : 1;
   // Ground deep gradient with layered color band
   const g = ctx.createLinearGradient(0, GND-4, 0, H);
   g.addColorStop(0, cw.ground[0]);
@@ -4630,6 +5406,260 @@ function drawGround(){
   g.addColorStop(0.6, cw.ground[2]);
   g.addColorStop(1, '#02020a');
   ctx.fillStyle = g; ctx.fillRect(0, GND-4, W, H-GND+4);
+
+  // ============================================================================
+  //  PER-WORLD GROUND TEXTURE — unique pattern for visual identity
+  // ============================================================================
+  ctx.save();
+  // clip everything inside the ground band
+  ctx.beginPath(); ctx.rect(0, GND-4, W, H-GND+4); ctx.clip();
+  const scroll = (G.distance*1.6);
+  // W1 — COSMIC TILES with embedded stars
+  if(wIdx===1){
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = 'rgba(255,180,220,0.35)';
+    ctx.lineWidth = 0.8;
+    const ts = 60;
+    const os = scroll % ts;
+    for(let y = GND+6; y < H; y += ts*0.7){
+      for(let x = -ts; x < W+ts; x += ts){
+        const cx = x - os + ts/2;
+        // diamond tile
+        ctx.beginPath();
+        ctx.moveTo(cx, y); ctx.lineTo(cx+ts/2, y+ts*0.35);
+        ctx.lineTo(cx, y+ts*0.7); ctx.lineTo(cx-ts/2, y+ts*0.35);
+        ctx.closePath(); ctx.stroke();
+        // tiny star in center
+        if(((x/ts)|0) % 3 === 0){
+          ctx.save();
+          ctx.globalCompositeOperation='lighter';
+          ctx.fillStyle = 'rgba(255,220,255,0.7)';
+          ctx.beginPath(); ctx.arc(cx, y+ts*0.35, 1.4, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+    ctx.restore();
+  }
+  // W2 — ICE CRACKS (branching fractures)
+  else if(wIdx===2){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200,235,255,0.45)';
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = 'round';
+    // deterministic crack seeds with scroll offset
+    for(let i=0; i<8; i++){
+      const ox = ((i*137 - scroll*0.5) % (W+200)) - 100;
+      const oy = GND + 12 + (i%3)*20;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      let x = ox, y = oy;
+      for(let k=0; k<5; k++){
+        x += 20 + Math.sin(i*0.7+k)*8;
+        y += 6 + Math.cos(i*1.3+k)*6;
+        ctx.lineTo(x, y);
+        // branch
+        if(k===2){
+          ctx.moveTo(x, y);
+          ctx.lineTo(x+14, y+10+Math.sin(i)*5);
+          ctx.moveTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
+    // ice crystal flecks
+    ctx.fillStyle = 'rgba(220,245,255,0.6)';
+    for(let i=0; i<14; i++){
+      const x = ((i*97 - scroll*0.8) % (W+40)) - 20;
+      const y = GND + 8 + (i%4)*16;
+      ctx.beginPath();
+      ctx.moveTo(x, y-2); ctx.lineTo(x+2, y); ctx.lineTo(x, y+2); ctx.lineTo(x-2, y); ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // W3 — LAVA FISSURES (glowing cracks)
+  else if(wIdx===3){
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(let i=0; i<6; i++){
+      const ox = ((i*163 - scroll*1.2) % (W+200)) - 100;
+      const oy = GND + 10 + (i%3)*22;
+      // outer glow
+      ctx.strokeStyle = 'rgba(255,120,40,0.55)';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      let x = ox, y = oy;
+      const path = [];
+      for(let k=0; k<6; k++){
+        x += 18 + Math.sin(i*0.9+k)*6;
+        y += 4 + Math.cos(i*1.5+k)*5;
+        path.push([x,y]);
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // hot core
+      ctx.strokeStyle = 'rgba(255,230,120,0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      for(const p of path) ctx.lineTo(p[0], p[1]);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // W4 — FUNGAL PATTERNS (circle-cluster spores)
+  else if(wIdx===4){
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    for(let i=0; i<10; i++){
+      const ox = ((i*121 - scroll*0.7) % (W+100)) - 50;
+      const oy = GND + 14 + (i%3)*22;
+      // spore cluster
+      ctx.fillStyle = i%2 ? 'rgba(180,255,80,0.6)' : 'rgba(255,240,100,0.5)';
+      for(let k=0; k<4; k++){
+        const kx = ox + k*6 - 6;
+        const ky = oy + Math.sin(k*1.5 + i)*3;
+        ctx.beginPath(); ctx.arc(kx, ky, 2.4, 0, Math.PI*2); ctx.fill();
+      }
+      // center dot
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = 'rgba(200,255,120,0.7)';
+      ctx.beginPath(); ctx.arc(ox, oy, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  // W5 — VOID RUNES (subtle glyphs, faint)
+  else if(wIdx===5){
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = 'rgba(200,200,255,0.4)';
+    ctx.lineWidth = 0.8;
+    for(let i=0; i<7; i++){
+      const ox = ((i*159 - scroll*0.6) % (W+120)) - 60;
+      const oy = GND + 16 + (i%2)*28;
+      // circle + triangle rune
+      ctx.beginPath(); ctx.arc(ox, oy, 6, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ox, oy-4); ctx.lineTo(ox+3.5, oy+2); ctx.lineTo(ox-3.5, oy+2); ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // W6 — SOLAR CRACKS with ember glow
+  else if(wIdx===6){
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,200,60,0.55)';
+    ctx.lineWidth = 1.5;
+    for(let i=0; i<8; i++){
+      const ox = ((i*141 - scroll*0.9) % (W+100)) - 50;
+      const oy = GND + 10 + (i%4)*18;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy); ctx.lineTo(ox+20, oy+8); ctx.lineTo(ox+30, oy-2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // W7 — CIRCUIT TRACES with LED nodes
+  else if(wIdx===7){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(100,230,255,0.55)';
+    ctx.lineWidth = 1;
+    const tileW = 80;
+    const os = scroll % tileW;
+    for(let x = -tileW; x < W+tileW; x += tileW){
+      const px = x - os;
+      const py = GND + 14;
+      // horizontal trace
+      ctx.beginPath();
+      ctx.moveTo(px, py); ctx.lineTo(px+tileW*0.4, py);
+      ctx.lineTo(px+tileW*0.4, py+14);
+      ctx.lineTo(px+tileW*0.8, py+14);
+      ctx.stroke();
+      // branch down
+      ctx.beginPath();
+      ctx.moveTo(px+tileW*0.6, py);
+      ctx.lineTo(px+tileW*0.6, py+26);
+      ctx.stroke();
+      // LED nodes
+      const blink = Math.sin(G.t*0.01 + x*0.03) > 0.5;
+      ctx.fillStyle = blink ? '#20ffe0' : '#0a3040';
+      ctx.beginPath(); ctx.arc(px+tileW*0.4, py, 1.8, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = blink ? '#ff40d0' : '#3a0a2a';
+      ctx.beginPath(); ctx.arc(px+tileW*0.6, py+26, 1.8, 0, Math.PI*2); ctx.fill();
+      // LED glow
+      if(blink){
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        const lg = ctx.createRadialGradient(px+tileW*0.4, py, 0, px+tileW*0.4, py, 6);
+        lg.addColorStop(0, 'rgba(30,255,220,0.6)');
+        lg.addColorStop(1, 'rgba(30,255,220,0)');
+        ctx.fillStyle = lg;
+        ctx.beginPath(); ctx.arc(px+tileW*0.4, py, 6, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+  // W8 — CORAL PATTERNS / wave lines
+  else if(wIdx===8){
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = 'rgba(100,230,220,0.5)';
+    ctx.lineWidth = 1;
+    for(let y = GND+8; y < H; y += 14){
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      for(let x = 0; x <= W; x += 10){
+        ctx.lineTo(x, y + Math.sin((x + scroll*0.4 + y*0.3)*0.05)*2);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // W9 — RUBY FACETS (diamond grid)
+  else if(wIdx===9){
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = 'rgba(255,80,140,0.5)';
+    ctx.lineWidth = 0.8;
+    const ts = 40;
+    const os = scroll % ts;
+    for(let y = GND+6; y < H; y += ts*0.6){
+      for(let x = -ts; x < W+ts; x += ts){
+        const cx = x - os + ts/2;
+        ctx.beginPath();
+        ctx.moveTo(cx, y); ctx.lineTo(cx+ts/2, y+ts*0.3);
+        ctx.lineTo(cx, y+ts*0.6); ctx.lineTo(cx-ts/2, y+ts*0.3);
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  // W10 — GOLDEN CHEVRONS (royal arrows)
+  else if(wIdx===10){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,230,120,0.55)';
+    ctx.lineWidth = 1.2;
+    const ts = 40;
+    const os = scroll % ts;
+    for(let y = GND+10; y < H; y += 18){
+      for(let x = -ts; x < W+ts; x += ts){
+        const px = x - os;
+        ctx.beginPath();
+        ctx.moveTo(px, y+6); ctx.lineTo(px+ts/2, y); ctx.lineTo(px+ts, y+6);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  ctx.restore();
 
   // Double horizon glow (horizon + accent)
   ctx.save();
@@ -4649,7 +5679,7 @@ function drawGround(){
 
   // Hexagonal grid panels scrolling (sci-fi floor)
   const tileW = 78, tileH = 16;
-  const scroll = (G.distance*1.6) % tileW;
+  const hexScroll = (G.distance*1.6) % tileW;
   ctx.save();
   for(let row = 0; row < 9; row++){
     const rowY = GND + 8 + row*tileH;
@@ -4657,7 +5687,7 @@ function drawGround(){
     const rowAlpha = 0.38 * (1 - perspective*0.6);
     const offset = ((row%2===0) ? 0 : tileW/2);
     const stretchFactor = 1 + perspective*0.35;
-    for(let x = -tileW + offset - scroll*stretchFactor; x < W+tileW*2; x += tileW){
+    for(let x = -tileW + offset - hexScroll*stretchFactor; x < W+tileW*2; x += tileW){
       const cx = x + tileW/2;
       const midX = W/2 + (cx - W/2) * (1 + perspective*0.25);
       const wHalf = (tileW/2) * (1 + perspective*0.25);
@@ -4671,7 +5701,7 @@ function drawGround(){
       ctx.lineTo(midX - wHalf - 3, rowY+tileH);
       ctx.closePath();
       ctx.stroke();
-      if((Math.floor((cx + scroll)/tileW) + row) % 9 === 0){
+      if((Math.floor((cx + hexScroll)/tileW) + row) % 9 === 0){
         ctx.fillStyle = cw.horizon;
         ctx.globalAlpha = rowAlpha*0.22;
         ctx.fill();
@@ -4886,18 +5916,19 @@ function drawForegroundDebris(){
 function drawParticles(){
   for(const p of G.particles){
     ctx.save();
-    ctx.globalAlpha = Math.max(0, p.life);
+    // -30% global alpha on particle glow
+    ctx.globalAlpha = Math.max(0, p.life) * 0.7;
     if(p.shape==='rect'){
       ctx.translate(p.x,p.y); ctx.rotate(p.rot||0);
       ctx.fillStyle = p.color;
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 5;
+      ctx.shadowBlur = 3.5;  // reduced from 5
       ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*0.6);
     } else {
-      // Additive glow halo around each circle particle
+      // Additive glow halo around each circle particle (reduced 30%)
       ctx.globalCompositeOperation = 'lighter';
       const r = p.size * p.life;
-      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*2);
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*1.4);  // reduced from r*2
       grad.addColorStop(0, p.color);
       grad.addColorStop(0.4, p.color);
       grad.addColorStop(1, p.color.replace(/rgba?\(([^)]+)\)/, (m,inner)=>{
@@ -4905,9 +5936,10 @@ function drawParticles(){
         return 'rgba('+parts[0]+','+parts[1]+','+parts[2]+',0)';
       }).replace(/^#[0-9a-f]{6,8}$/i, p.color+'00'));
       ctx.fillStyle = grad;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.8, 0, Math.PI*2); ctx.fill();
-      // Hot core
+      ctx.beginPath(); ctx.arc(p.x, p.y, r*1.25, 0, Math.PI*2); ctx.fill();  // reduced from r*1.8
+      // Hot core (unchanged)
       ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = Math.max(0, p.life);  // core stays full alpha
       ctx.fillStyle = p.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, r*0.9, 0, Math.PI*2); ctx.fill();
     }
@@ -4953,47 +5985,176 @@ function drawBossWave(){
   if(G.bossActive){
     const wx = G.bossWaveX;
     ctx.save();
-    // wall gradient
-    const grad = ctx.createLinearGradient(wx-250, 0, wx, 0);
-    grad.addColorStop(0, 'rgba(255,40,10,0)');
-    grad.addColorStop(0.6, 'rgba(255,80,20,0.6)');
-    grad.addColorStop(1, 'rgba(255,200,50,0.95)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(wx-250, 0, 250, H);
-    // flame tongue shapes along edge
-    ctx.fillStyle = C.fireHi;
+
+    // 1. BACK SHADOW MASS — dark red fog extending well behind the wave
+    const fogG = ctx.createLinearGradient(wx-360, 0, wx, 0);
+    fogG.addColorStop(0, 'rgba(60,0,10,0)');
+    fogG.addColorStop(0.5, 'rgba(180,20,30,0.35)');
+    fogG.addColorStop(1, 'rgba(255,60,20,0.5)');
+    ctx.fillStyle = fogG;
+    ctx.fillRect(wx-360, 0, 360, H);
+
+    // 2. WALL GRADIENT — multi-stop hot core
+    const wallG = ctx.createLinearGradient(wx-280, 0, wx, 0);
+    wallG.addColorStop(0,    'rgba(255,40,10,0)');
+    wallG.addColorStop(0.35, 'rgba(200,20,10,0.45)');
+    wallG.addColorStop(0.7,  'rgba(255,100,30,0.85)');
+    wallG.addColorStop(0.92, 'rgba(255,220,80,0.95)');
+    wallG.addColorStop(1,    'rgba(255,255,220,1)');
+    ctx.fillStyle = wallG;
+    ctx.fillRect(wx-280, 0, 280, H);
+
+    // 3. PROCEDURAL FLAME TONGUES — 3-octave noise-driven flame edge
+    ctx.save();
     ctx.globalCompositeOperation='lighter';
-    for(let y=0; y<H; y+=36){
-      const phase = G.t*0.01 + y*0.05;
-      const offset = Math.sin(phase)*14 + 22;
-      ctx.beginPath();
-      ctx.moveTo(wx, y);
-      ctx.bezierCurveTo(wx+offset, y+10, wx+offset*0.6, y+26, wx, y+36);
-      ctx.closePath();
-      ctx.fill();
+    // Layer 1 — giant base flames
+    ctx.fillStyle = 'rgba(255,80,20,0.7)';
+    ctx.beginPath();
+    ctx.moveTo(wx+80, 0);
+    for(let y=0; y<=H; y+=8){
+      const phase = G.t*0.012 + y*0.03;
+      const n1 = Math.sin(phase)*24;
+      const n2 = Math.sin(phase*1.7 + y*0.015)*14;
+      const n3 = Math.cos(phase*2.5 + y*0.009)*10;
+      ctx.lineTo(wx + n1 + n2 + n3, y);
     }
-    // embers
-    if(G.frame%2===0){
-      for(let i=0;i<3;i++){
+    ctx.lineTo(wx+80, H);
+    ctx.closePath();
+    ctx.fill();
+    // Layer 2 — inner hotter flame
+    ctx.fillStyle = 'rgba(255,180,60,0.7)';
+    ctx.beginPath();
+    ctx.moveTo(wx+50, 0);
+    for(let y=0; y<=H; y+=8){
+      const phase = G.t*0.016 - y*0.04;
+      const n1 = Math.sin(phase)*18;
+      const n2 = Math.cos(phase*2.1 + y*0.02)*10;
+      ctx.lineTo(wx-22 + n1 + n2, y);
+    }
+    ctx.lineTo(wx+50, H);
+    ctx.closePath();
+    ctx.fill();
+    // Layer 3 — white-hot core edge
+    ctx.fillStyle = 'rgba(255,240,180,0.75)';
+    ctx.beginPath();
+    ctx.moveTo(wx+20, 0);
+    for(let y=0; y<=H; y+=8){
+      const phase = G.t*0.02 + y*0.05;
+      const n1 = Math.sin(phase)*10;
+      ctx.lineTo(wx-45 + n1, y);
+    }
+    ctx.lineTo(wx+20, H);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 4. DEMONIC FACES — 3 faces emerging from the flame (roar animation)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const facePositions = [
+      {y: H*0.22, scale: 1.0, phase: 0},
+      {y: H*0.52, scale: 1.3, phase: 2.1},
+      {y: H*0.80, scale: 0.9, phase: 4.3},
+    ];
+    for(const fp of facePositions){
+      const emerge = (Math.sin(G.t*0.003 + fp.phase) + 1) * 0.5; // 0..1 pulsing
+      if(emerge < 0.2) continue;
+      const faceX = wx - 60 + Math.sin(G.t*0.005 + fp.phase)*18;
+      const fs = fp.scale * (0.6 + emerge*0.6); // face scale
+      const fa = emerge * 0.75;  // face alpha
+      ctx.save();
+      ctx.translate(faceX, fp.y);
+      ctx.scale(fs, fs);
+      // face mass (orange-red oval)
+      const fg = ctx.createRadialGradient(0, 0, 5, 0, 0, 42);
+      fg.addColorStop(0, `rgba(255,140,40,${fa*0.9})`);
+      fg.addColorStop(0.6, `rgba(200,40,20,${fa*0.5})`);
+      fg.addColorStop(1, 'rgba(180,20,10,0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.ellipse(0, 0, 42, 52, 0, 0, Math.PI*2); ctx.fill();
+      // angry eyes (slanted ovals, bright white-hot)
+      ctx.fillStyle = `rgba(255,250,200,${fa})`;
+      ctx.save();
+      ctx.rotate(-0.3);
+      ctx.beginPath(); ctx.ellipse(-12, -10, 6, 3, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.rotate(0.3);
+      ctx.beginPath(); ctx.ellipse(12, -10, 6, 3, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      // pupils (dark slits)
+      ctx.fillStyle = `rgba(40,0,0,${fa})`;
+      ctx.save();
+      ctx.rotate(-0.3);
+      ctx.beginPath(); ctx.ellipse(-12, -10, 2, 2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.rotate(0.3);
+      ctx.beginPath(); ctx.ellipse(12, -10, 2, 2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      // horns (two curved triangles on top)
+      ctx.fillStyle = `rgba(80,10,10,${fa*0.8})`;
+      ctx.beginPath();
+      ctx.moveTo(-18, -22); ctx.lineTo(-24, -40); ctx.lineTo(-12, -26); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(18, -22); ctx.lineTo(24, -40); ctx.lineTo(12, -26); ctx.closePath(); ctx.fill();
+      // screaming mouth (open oval with fangs)
+      const mouthOpen = 10 + Math.sin(G.t*0.012+fp.phase)*4;
+      ctx.fillStyle = `rgba(20,0,0,${fa*0.85})`;
+      ctx.beginPath(); ctx.ellipse(0, 14, 10, mouthOpen, 0, 0, Math.PI*2); ctx.fill();
+      // fangs (white triangles)
+      ctx.fillStyle = `rgba(255,240,220,${fa})`;
+      ctx.beginPath();
+      ctx.moveTo(-5, 8); ctx.lineTo(-3, 14); ctx.lineTo(-1, 8); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(5, 8); ctx.lineTo(3, 14); ctx.lineTo(1, 8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // 5. Heavy embers streaming from wave (more than before)
+    if(G.frame%1===0){
+      for(let i=0;i<5;i++){
         G.particles.push({
-          x: wx+rand(0,20), y: rand(0,H),
-          vx: rand(1,4), vy: rand(-3,0),
-          life:1, max:30, color: i%2?C.fireHi:C.fire, size:rand(2,5), g:0.03,
+          x: wx+rand(-30,20), y: rand(0,H),
+          vx: rand(1.5,5), vy: rand(-4,0),
+          life:1, max:rand(28,46), color: i%3===0?C.fireHi: (i%3===1?C.fire:'#ffd54a'),
+          size:rand(2,5), g:0.04, shape:'circle',
         });
       }
     }
+
+    // 6. CHROMATIC ABERRATION pulse on boss (red/cyan fringe at edges)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const caIntensity = 0.15 + Math.sin(G.t*0.01)*0.08;
+    ctx.fillStyle = `rgba(255,40,20,${caIntensity})`;
+    ctx.fillRect(0, 0, 40, H);
+    ctx.fillRect(W-40, 0, 40, H);
+    ctx.fillStyle = `rgba(40,200,255,${caIntensity*0.6})`;
+    ctx.fillRect(0, 0, W, 30);
+    ctx.fillRect(0, H-30, W, 30);
+    ctx.restore();
+
+    // 7. Aggressive screen shake during boss
+    if(G.frame%4 === 0) G.shake = Math.max(G.shake, 4 + Math.sin(G.t*0.01)*2);
+
     ctx.restore();
   }
   // warning overlay
   if(G.bossWarn>0){
     const blink = Math.floor(G.t/150)%2===0;
     ctx.save();
-    ctx.fillStyle = blink ? 'rgba(255,30,30,0.25)' : 'rgba(255,30,30,0)';
+    ctx.fillStyle = blink ? 'rgba(255,30,30,0.3)' : 'rgba(255,30,30,0)';
     ctx.fillRect(0,0,W,H);
     ctx.textAlign='center';
+    // extra scream effect: slight horizontal jitter on text
+    const jit = Math.sin(G.t*0.04)*3;
     ctx.font='900 38px Chakra Petch';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillText('⚠ FIRE WAVE INCOMING ⚠', W/2+2+jit, H*0.35+2);
     ctx.fillStyle = blink ? '#ff4060' : '#ffeadd';
-    ctx.fillText('⚠ FIRE WAVE INCOMING ⚠', W/2, H*0.35);
+    ctx.fillText('⚠ FIRE WAVE INCOMING ⚠', W/2+jit, H*0.35);
     ctx.font='bold 15px Chakra Petch';
     ctx.fillStyle = '#fff';
     ctx.fillText('Dodge obstacles to stay ahead!', W/2, H*0.35+26);
@@ -5972,6 +7133,7 @@ function render(){
   // play / gameover share world
   drawBackground();
   drawGround();
+  drawAmbient(); // world-flavored ambient particles between ground and gameplay
   for(const o of G.obstacles) drawObstacle(o);
   for(const e of G.enemies){
     drawEnemy(e);
