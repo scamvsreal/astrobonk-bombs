@@ -663,7 +663,7 @@ const TUTORIALS = {
   jump:       { title:'TAP TO JUMP', sub:'Tap the screen to jump. HOLD for a higher jump.', icon:'👆', color:'#ff4db8' },
   doubleJump: { title:'TRIPLE JUMP!', sub:'Tap in air for 2nd jump. Tap AGAIN for 3rd jump! Reach sparks way up high!', icon:'⚡⚡', color:'#c77dff' },
   col_smash:  { title:'SMASH ITEM', sub:'SWIPE DOWN on screen (or ↓ key) while airborne to SMASH! Destroys enemies + obstacles in a huge blast radius.', icon:'💥', color:'#ff6a40' },
-  glide:      { title:'GLIDE', sub:'Hold the tap while falling to float slowly down.', icon:'🪶', color:'#ffffff' },
+  glide:      { title:'🪶 GLIDE UNLOCKED', sub:'While FALLING (after a jump), keep your finger on the screen to float down slowly. Perfect for crossing big gaps!', icon:'🪶', color:'#ffffff' },
   // Obstacles
   coal:     { title:'CRYSTAL CLUSTER', sub:'Sharp crystals on the ground. Jump OVER to pass.', icon:'💠', color:'#ff4db8' },
   firepit:  { title:'PLASMA VENT', sub:'Tall plasma geyser! Jump HIGHER — hold the tap.', icon:'🔥', color:'#ff5733' },
@@ -893,6 +893,9 @@ function onTap(px,py){
       B.vy = -13;
       B.jumps = 2;
       B.squashX = 0.75; B.squashY = 1.3;
+      // Re-arm jumpHeld so player can hold for glide after double jump too
+      B.jumpHeld = true;
+      B.jumpStart = G.t;
       sfx('djump');
       spawnBurst(B.x, B.y+20, C.bombPink, 10);
       G.shockwaves.push({x:B.x, y:B.y+10, r:8, maxR:60, life:1, color:C.bombPink});
@@ -902,6 +905,9 @@ function onTap(px,py){
       B.vy = -11.5;
       B.jumps = 3;
       B.squashX = 0.7; B.squashY = 1.35;
+      // Re-arm jumpHeld so glide works after triple jump too
+      B.jumpHeld = true;
+      B.jumpStart = G.t;
       sfx('djump'); setTimeout(()=>sfx('combo'), 60);
       spawnBurst(B.x, B.y+20, C.water, 10);
       spawnBurst(B.x, B.y+10, C.coinHi, 10);
@@ -2121,8 +2127,13 @@ function update(dt){
 
   // Variable jump hold (slightly longer window)
   if(B.jumpHeld && G.t - B.jumpStart < 280 && B.vy < 0) B.vy -= 0.55;
-  // GLIDE — unlocks at World 4 (hold tap while falling)
+  // GLIDE — unlocks at World 4 (hold tap while falling, any jump count)
   const isGliding = G.world >= UNLOCK.glide && B.jumpHeld && !B.grounded && !B.pounding && G.t - B.jumpStart > 280 && B.vy > 1;
+  // Feedback — pop "GLIDE!" on first activation frame (transitions from not-gliding to gliding)
+  if(isGliding && !B._wasGliding){
+    popup(B.x, B.y-60, '🪶 GLIDE', '#c8f0ff', 1.1);
+  }
+  B._wasGliding = isGliding;
   // Asymmetric gravity — floaty going up, snappy coming down (or soft if gliding)
   let gravity = isGliding ? 0.22 : (B.vy < 0 ? 0.58 : 0.95);
   B.vy += gravity;
