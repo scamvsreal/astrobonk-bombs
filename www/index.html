@@ -4999,22 +4999,73 @@ function drawFlame(x,y,w,h,phase){
 // ============================================================================
 //  DRAW — COLLECTIBLES
 // ============================================================================
+// Per-collectible color palette for halo + orbit particles
+function getCollectibleColor(kind){
+  switch(kind){
+    case 'coin':         return {rgb:'255,213,74',  name:'gold'};
+    case 'gem':          return {rgb:'255,77,184',  name:'magenta'};
+    case 'water':        return {rgb:'77,208,255',  name:'cyan'};
+    case 'ice':          return {rgb:'126,239,255', name:'ice'};
+    case 'shield':       return {rgb:'180,230,255', name:'white'};
+    case 'magnet':       return {rgb:'255,100,180', name:'pink'};
+    case 'rocket':       return {rgb:'255,100,60',  name:'flame'};
+    case 'dbl':          return {rgb:'255,230,100', name:'yellow'};
+    case 'slowmo':       return {rgb:'128,216,255', name:'sky'};
+    case 'smash':        return {rgb:'255,140,60',  name:'orange'};
+    case 'supersparkle': return {rgb:'255,200,255', name:'rainbow'};
+    default:             return {rgb:'255,255,255', name:'white'};
+  }
+}
+
 function drawCollectible(c){
   ctx.save();
   ctx.translate(c.x, c.y);
   const pulse = 1 + Math.sin(G.t*0.008+c.t)*0.06;
   ctx.scale(pulse, pulse);
-  ctx.save(); ctx.globalCompositeOperation='lighter';
-  let glowColor = '#ffffff';
-  if(c.kind==='coin') glowColor='rgba(255,213,74,0.5)';
-  else if(c.kind==='gem') glowColor='rgba(255,77,184,0.55)';
-  else if(c.kind==='water') glowColor='rgba(77,208,255,0.55)';
-  else if(c.kind==='ice') glowColor='rgba(126,239,255,0.65)';
-  else glowColor='rgba(255,255,255,0.55)';
+
+  const palette = getCollectibleColor(c.kind);
+  const baseRGB = palette.rgb;
+
+  // 1. Outer pulsing halo — colored to match collectible (−30% intensity)
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const haloPulse = 0.7 + Math.sin(G.t*0.006 + c.t)*0.3;
   const g = ctx.createRadialGradient(0,0,2,0,0,c.r*2);
-  g.addColorStop(0,glowColor); g.addColorStop(1,'rgba(0,0,0,0)');
+  g.addColorStop(0, `rgba(${baseRGB},${0.35*haloPulse})`);   // was 0.5-0.65, −30%
+  g.addColorStop(0.5, `rgba(${baseRGB},${0.18*haloPulse})`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.arc(0,0,c.r*2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // 2. Magnetic orbit — 4 tiny particles orbiting at different phases & radii
+  //    Supersparkle gets rainbow multi-layer orbit, others get single-color
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const orbitSpeed = c.kind === 'supersparkle' ? 0.006 : 0.004;
+  const orbitCount = c.kind === 'supersparkle' ? 8 : 4;
+  for(let k=0; k<orbitCount; k++){
+    const oa = (k/orbitCount)*Math.PI*2 + G.t*orbitSpeed + c.t*0.3;
+    const orbR = c.r*1.35 + Math.sin(G.t*0.008 + k)*c.r*0.1;
+    const ox = Math.cos(oa)*orbR;
+    const oy = Math.sin(oa)*orbR*0.55; // elliptical orbit (flatter)
+    const orbAlpha = 0.5 + Math.sin(G.t*0.01 + k)*0.3;
+    // particle glow
+    let orbColor;
+    if(c.kind === 'supersparkle'){
+      orbColor = `hsla(${(G.t*0.3 + k*45)%360},100%,75%,`;
+    } else {
+      orbColor = `rgba(${baseRGB},`;
+    }
+    const og = ctx.createRadialGradient(ox, oy, 0, ox, oy, 2.8);
+    og.addColorStop(0, orbColor + orbAlpha + ')');
+    og.addColorStop(1, orbColor + '0)');
+    ctx.fillStyle = og;
+    ctx.beginPath(); ctx.arc(ox, oy, 2.8, 0, Math.PI*2); ctx.fill();
+    // particle core
+    ctx.fillStyle = `rgba(255,255,255,${orbAlpha*0.85})`;
+    ctx.beginPath(); ctx.arc(ox, oy, 0.8, 0, Math.PI*2); ctx.fill();
+  }
   ctx.restore();
 
   if(c.kind==='coin'){
@@ -5142,88 +5193,168 @@ function drawCollectible(c){
     ctx.restore();
   }
   else if(c.kind==='gem'){
-    // Full faceted diamond with animated sparkle
-    ctx.fillStyle = '#6a1a50';
+    // -------- FACETED 3D DIAMOND with 4 triangular facets + sparkle --------
+    // Slight side-to-side wobble (living gem)
+    ctx.rotate(Math.sin(G.t*0.003 + c.t)*0.08);
+    // 1. Back shadow (depth under gem)
+    ctx.save();
+    ctx.fillStyle = 'rgba(30,0,20,0.4)';
     ctx.beginPath();
     ctx.moveTo(0,-c.r); ctx.lineTo(c.r,0); ctx.lineTo(0,c.r); ctx.lineTo(-c.r,0);
     ctx.closePath(); ctx.fill();
-    ctx.fillStyle = C.gem;
+    ctx.restore();
+    // 2. Four facets — each triangle from center to 2 outer points (N, E, S, W)
+    //    Each with its own gradient for 3D refraction feel
+    // Top-right facet (brightest)
+    const fg1 = ctx.createLinearGradient(0,-c.r, c.r,0);
+    fg1.addColorStop(0, '#ffe4f4'); fg1.addColorStop(0.5, '#ff6ec4'); fg1.addColorStop(1, '#c21580');
+    ctx.fillStyle = fg1;
     ctx.beginPath();
     ctx.moveTo(0,-c.r); ctx.lineTo(c.r,0); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = C.gemHi;
+    // Top-left facet (bright)
+    const fg2 = ctx.createLinearGradient(0,-c.r, -c.r,0);
+    fg2.addColorStop(0, '#ffd0e8'); fg2.addColorStop(0.5, '#ff4db8'); fg2.addColorStop(1, '#8a0c5a');
+    ctx.fillStyle = fg2;
     ctx.beginPath();
     ctx.moveTo(0,-c.r); ctx.lineTo(-c.r,0); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
-    // top crown highlight
+    // Bottom-right facet (medium-dark)
+    const fg3 = ctx.createLinearGradient(c.r,0, 0,c.r);
+    fg3.addColorStop(0, '#c21580'); fg3.addColorStop(0.6, '#7a0c4a'); fg3.addColorStop(1, '#3a0420');
+    ctx.fillStyle = fg3;
+    ctx.beginPath();
+    ctx.moveTo(c.r,0); ctx.lineTo(0,c.r); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+    // Bottom-left facet (darkest — shadow side)
+    const fg4 = ctx.createLinearGradient(-c.r,0, 0,c.r);
+    fg4.addColorStop(0, '#8a0c5a'); fg4.addColorStop(0.6, '#4a0620'); fg4.addColorStop(1, '#200208');
+    ctx.fillStyle = fg4;
+    ctx.beginPath();
+    ctx.moveTo(-c.r,0); ctx.lineTo(0,c.r); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+
+    // 3. Top crown white highlight (primary glossy edge)
     ctx.save();
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.moveTo(0,-c.r);
-    ctx.lineTo(c.r*0.38, -c.r*0.35);
-    ctx.lineTo(0, -c.r*0.22);
-    ctx.lineTo(-c.r*0.38, -c.r*0.35);
+    ctx.lineTo(c.r*0.42, -c.r*0.35);
+    ctx.lineTo(0, -c.r*0.18);
+    ctx.lineTo(-c.r*0.42, -c.r*0.35);
     ctx.closePath(); ctx.fill();
     ctx.restore();
-    // outline + facet lines
-    ctx.strokeStyle = '#ffe0f0'; ctx.lineWidth=1.3;
+    // secondary sub-highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath();
-    ctx.moveTo(0,-c.r); ctx.lineTo(c.r,0); ctx.lineTo(0,c.r); ctx.lineTo(-c.r,0);
-    ctx.closePath(); ctx.stroke();
+    ctx.moveTo(c.r*0.18, -c.r*0.55);
+    ctx.lineTo(c.r*0.3, -c.r*0.38);
+    ctx.lineTo(c.r*0.08, -c.r*0.4);
+    ctx.closePath(); ctx.fill();
+
+    // 4. Facet separator lines (glossy cross)
+    ctx.strokeStyle = 'rgba(255,220,240,0.85)'; ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.moveTo(c.r,0); ctx.lineTo(-c.r,0);
     ctx.moveTo(0,-c.r); ctx.lineTo(0,c.r);
     ctx.stroke();
-    // moving sparkle
+    // Diamond outline (bright pink-white ring)
+    ctx.strokeStyle = '#ffb8e0'; ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(0,-c.r); ctx.lineTo(c.r,0); ctx.lineTo(0,c.r); ctx.lineTo(-c.r,0);
+    ctx.closePath(); ctx.stroke();
+
+    // 5. Animated sparkle traversing the upper facets (cross pattern)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const sph = (G.t*0.004+c.t)%6.28;
-    const spX = Math.cos(sph)*c.r*0.3;
-    const spY = -Math.abs(Math.sin(sph))*c.r*0.4 - c.r*0.15;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(spX, spY, 2, 0, Math.PI*2); ctx.fill();
+    const sph = (G.t*0.006+c.t)%6.28;
+    const spX = Math.cos(sph)*c.r*0.4;
+    const spY = -Math.abs(Math.sin(sph))*c.r*0.45 - c.r*0.12;
+    // 4-ray star
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = 1.2; ctx.lineCap='round';
+    for(let k=0; k<4; k++){
+      const sa = k*Math.PI/2;
+      ctx.beginPath();
+      ctx.moveTo(spX - Math.cos(sa)*3.5, spY - Math.sin(sa)*3.5);
+      ctx.lineTo(spX + Math.cos(sa)*3.5, spY + Math.sin(sa)*3.5);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(spX, spY, 1.6, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
   else if(c.kind==='water'){
-    // Pulsing ripple ring behind drop
-    const ripplePhase = (G.t*0.004+c.t*0.5)%1;
+    // -------- 3D WATER DROP with liquid shimmer + ripples --------
+    // 1. Pulsing ripple rings behind drop (2 rings)
     ctx.save();
-    ctx.globalAlpha = (1-ripplePhase)*0.55;
-    ctx.strokeStyle = C.waterHi;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, c.r + ripplePhase*c.r*0.8, 0, Math.PI*2); ctx.stroke();
+    for(let r=0; r<2; r++){
+      const ripplePhase = (G.t*0.004 + c.t*0.5 + r*0.5)%1;
+      ctx.globalAlpha = (1-ripplePhase)*0.45;
+      ctx.strokeStyle = C.waterHi;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, c.r + ripplePhase*c.r*0.9, 0, Math.PI*2); ctx.stroke();
+    }
     ctx.restore();
-    // drop body with deeper gradient
-    const g = ctx.createRadialGradient(-c.r*0.35, -c.r*0.3, 1, 0, c.r*0.1, c.r*1.2);
-    g.addColorStop(0, '#eaf9ff');
-    g.addColorStop(0.45, C.waterHi);
-    g.addColorStop(1, '#1688d0');
+    // 2. Drop body with rich 5-stop gradient (depth)
+    const g = ctx.createRadialGradient(-c.r*0.3, -c.r*0.35, 1, 0, c.r*0.1, c.r*1.15);
+    g.addColorStop(0,    '#ffffff');
+    g.addColorStop(0.15, '#eaf9ff');
+    g.addColorStop(0.45, '#9fe4ff');
+    g.addColorStop(0.78, '#3aa8e8');
+    g.addColorStop(1,    '#0a5090');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(0,-c.r);
     ctx.bezierCurveTo(c.r,0, c.r*0.7,c.r, 0,c.r);
     ctx.bezierCurveTo(-c.r*0.7,c.r, -c.r,0, 0,-c.r);
     ctx.fill();
-    // inner wave line (animated)
-    const wavePhase = G.t*0.005 + c.t;
+    // 3. Rim light on bottom-right (refraction)
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    ctx.lineWidth = 1.8;
+    ctx.globalCompositeOperation='lighter';
+    const rimG = ctx.createRadialGradient(c.r*0.4, c.r*0.35, c.r*0.35, 0, 0, c.r*1.05);
+    rimG.addColorStop(0, 'rgba(180,240,255,0)');
+    rimG.addColorStop(0.9, 'rgba(180,240,255,0)');
+    rimG.addColorStop(0.97, 'rgba(200,250,255,0.65)');
+    rimG.addColorStop(1, 'rgba(180,240,255,0)');
+    ctx.fillStyle = rimG;
     ctx.beginPath();
-    for(let i=-c.r*0.75; i<=c.r*0.75; i+=3){
+    ctx.moveTo(0,-c.r);
+    ctx.bezierCurveTo(c.r,0, c.r*0.7,c.r, 0,c.r);
+    ctx.bezierCurveTo(-c.r*0.7,c.r, -c.r,0, 0,-c.r);
+    ctx.fill();
+    ctx.restore();
+    // 4. Inner wave line animated (liquid surface)
+    ctx.save();
+    const wavePhase = G.t*0.005 + c.t;
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for(let i=-c.r*0.7; i<=c.r*0.7; i+=3){
       const y = Math.sin(i*0.18 + wavePhase)*2.5;
-      if(i===-c.r*0.75) ctx.moveTo(i, y);
+      if(i===-c.r*0.7) ctx.moveTo(i, y);
+      else ctx.lineTo(i, y);
+    }
+    ctx.stroke();
+    // secondary darker wave line
+    ctx.strokeStyle = 'rgba(30,100,160,0.4)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for(let i=-c.r*0.7; i<=c.r*0.7; i+=3){
+      const y = Math.sin(i*0.18 + wavePhase)*2.5 + 3;
+      if(i===-c.r*0.7) ctx.moveTo(i, y);
       else ctx.lineTo(i, y);
     }
     ctx.stroke();
     ctx.restore();
-    // main shine
-    ctx.fillStyle='rgba(255,255,255,0.75)';
-    ctx.beginPath(); ctx.ellipse(-c.r*0.32, -c.r*0.25, 3, 7, -0.35, 0, Math.PI*2); ctx.fill();
-    // tiny shine dot below
-    ctx.fillStyle='rgba(255,255,255,0.5)';
+    // 5. Primary specular (glossy top-left shine — teardrop shape)
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.32, -c.r*0.28, 2.8, 7, -0.35, 0, Math.PI*2); ctx.fill();
+    // secondary catchlight mid
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.18, -c.r*0.58, 1.4, 2.2, -0.3, 0, Math.PI*2); ctx.fill();
+    // tiny shine bottom
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath(); ctx.arc(c.r*0.25, c.r*0.45, 1.5, 0, Math.PI*2); ctx.fill();
-    // outline
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    // 6. Outline (subtle cyan edge)
+    ctx.strokeStyle = 'rgba(200,240,255,0.6)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0,-c.r);
@@ -5232,116 +5363,529 @@ function drawCollectible(c){
     ctx.stroke();
   }
   else if(c.kind==='ice'){
+    // -------- 3D ICE CUBE with frost crystal inside + cold aura --------
     ctx.save();
-    ctx.rotate(Math.sin(G.t*0.008+c.t)*0.15);
+    ctx.rotate(Math.sin(G.t*0.008+c.t)*0.12);
     const s = c.r;
-    // main cube with icy gradient
+    // 1. Cold aura (cyan frost breath)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const ap = 0.6 + Math.sin(G.t*0.01)*0.3;
+    const ag = ctx.createRadialGradient(0, 0, s*0.6, 0, 0, s*1.6);
+    ag.addColorStop(0, `rgba(180,250,255,${0.25*ap})`);
+    ag.addColorStop(1, 'rgba(180,250,255,0)');
+    ctx.fillStyle = ag;
+    ctx.beginPath(); ctx.arc(0, 0, s*1.6, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 2. Back/bottom shadow face (3D cube depth — right+bottom edges)
+    ctx.fillStyle = '#1a5a7a';
+    ctx.beginPath();
+    ctx.moveTo(s, -s+3); ctx.lineTo(s+3, -s+6); ctx.lineTo(s+3, s+3);
+    ctx.lineTo(s, s); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-s+3, s); ctx.lineTo(-s+6, s+3); ctx.lineTo(s+3, s+3);
+    ctx.lineTo(s, s); ctx.closePath(); ctx.fill();
+    // 3. Main cube face (5-stop icy gradient)
     const g = ctx.createLinearGradient(-s,-s,s,s);
-    g.addColorStop(0, '#f0fcff');
-    g.addColorStop(0.5, '#9fe8ff');
-    g.addColorStop(1, '#2ea0d8');
+    g.addColorStop(0,    '#ffffff');
+    g.addColorStop(0.22, '#e0faff');
+    g.addColorStop(0.55, '#9fe4ff');
+    g.addColorStop(0.82, '#3aa0d8');
+    g.addColorStop(1,    '#0a5090');
     ctx.fillStyle = g;
     roundRect(-s, -s, s*2, s*2, 7); ctx.fill();
-    // inner crystal pattern (6-point star)
+    // 4. Inner rim (glossy edge separator for depth)
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
+    roundRect(-s+2, -s+2, s*2-4, s*2-4, 5); ctx.stroke();
+    // 5. Frost 6-point star (inside cube, 3D look)
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.lineWidth = 1.2;
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(200,250,255,0.8)';
+    ctx.lineWidth = 1.4; ctx.lineCap='round';
     for(let i=0;i<6;i++){
       const a = (i/6)*Math.PI*2;
       ctx.beginPath();
       ctx.moveTo(0,0);
-      ctx.lineTo(Math.cos(a)*s*0.65, Math.sin(a)*s*0.65);
+      ctx.lineTo(Math.cos(a)*s*0.7, Math.sin(a)*s*0.7);
       ctx.stroke();
+      // mini branches (like real snowflake)
+      const bx = Math.cos(a)*s*0.45, by = Math.sin(a)*s*0.45;
+      const bAng = a + Math.PI/2;
+      ctx.strokeStyle = 'rgba(220,255,255,0.6)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(bx - Math.cos(bAng)*2, by - Math.sin(bAng)*2);
+      ctx.lineTo(bx + Math.cos(bAng)*2, by + Math.sin(bAng)*2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(200,250,255,0.8)';
+      ctx.lineWidth = 1.4;
     }
-    // hexagonal frost lines
-    ctx.strokeStyle = 'rgba(126,239,255,0.65)';
-    ctx.lineWidth = 1;
+    ctx.restore();
+    // hexagonal core
+    ctx.strokeStyle = 'rgba(140,240,255,0.85)';
+    ctx.lineWidth = 1.1;
     ctx.beginPath();
     for(let i=0;i<=6;i++){
       const a = (i/6)*Math.PI*2;
-      const x = Math.cos(a)*s*0.35, y = Math.sin(a)*s*0.35;
+      const x = Math.cos(a)*s*0.38, y = Math.sin(a)*s*0.38;
       if(i===0) ctx.moveTo(x,y);
       else ctx.lineTo(x,y);
     }
     ctx.stroke();
+    // 6. Top-left corner primary specular (big glossy shine)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    roundRect(-s+3, -s+3, 10, s*0.55, 3); ctx.fill();
+    // horizontal top edge streak
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    roundRect(-s+3, -s+3, s*2-6, 3, 1.5); ctx.fill();
+    // secondary mini specular dot
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.arc(-s*0.55, -s*0.55, 1.4, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // corner highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    roundRect(-s+3, -s+3, 8, s*2-12, 3); ctx.fill();
-    // top edge shine
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    roundRect(-s+3, -s+3, s*2-6, 4, 2); ctx.fill();
-    // outline
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2;
+    // 7. Outer outline
+    ctx.strokeStyle = 'rgba(220,250,255,0.9)'; ctx.lineWidth = 1.8;
     roundRect(-s, -s, s*2, s*2, 7); ctx.stroke();
-    // animated sparkle
+    // 8. Orbiting sparkle
     const sph = (G.t*0.006+c.t)%6.28;
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const spX = Math.cos(sph)*s*0.55;
-    const spY = Math.sin(sph)*s*0.55;
-    const sg = ctx.createRadialGradient(spX,spY,0, spX,spY, 6);
+    const spX = Math.cos(sph)*s*0.6;
+    const spY = Math.sin(sph)*s*0.6;
+    const sg = ctx.createRadialGradient(spX,spY,0, spX,spY, 5);
     sg.addColorStop(0, 'rgba(255,255,255,1)');
-    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    sg.addColorStop(1, 'rgba(180,240,255,0)');
     ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.arc(spX,spY,6,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(spX,spY,5,0,Math.PI*2); ctx.fill();
+    // cross-ray
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 0.7;
+    for(let k=0; k<2; k++){
+      const sa = k*Math.PI/2;
+      ctx.beginPath();
+      ctx.moveTo(spX - Math.cos(sa)*2.5, spY - Math.sin(sa)*2.5);
+      ctx.lineTo(spX + Math.cos(sa)*2.5, spY + Math.sin(sa)*2.5);
+      ctx.stroke();
+    }
     ctx.restore();
     ctx.restore();
   }
   else if(c.kind==='shield'){
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    // -------- 3D ENERGY SHIELD — tech hex-bubble with rotating arcs --------
+    // 1. Main sphere body (5-stop radial for 3D orb look)
+    const bg = ctx.createRadialGradient(-c.r*0.35, -c.r*0.4, c.r*0.08, 0, 0, c.r);
+    bg.addColorStop(0,    '#ffffff');
+    bg.addColorStop(0.22, '#d0efff');
+    bg.addColorStop(0.55, '#5acbff');
+    bg.addColorStop(0.85, '#0a6ab0');
+    bg.addColorStop(1,    '#042044');
+    ctx.fillStyle = bg;
     ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 22px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('🛡', 0, 2);
-  }
-  else if(c.kind==='magnet'){
-    ctx.fillStyle = C.gem;
-    ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font='bold 22px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('U', 0, 2);
-  }
-  else if(c.kind==='rocket'){
-    ctx.fillStyle = C.fire;
-    ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font='bold 20px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('▲', 0, 2);
-  }
-  else if(c.kind==='dbl'){
-    ctx.fillStyle = C.coinHi;
-    ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#5a3a00'; ctx.font='bold 18px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText('x2', 0, 2);
-  }
-  else if(c.kind==='smash'){
-    // Downward slam icon — fiery arrow
-    const pulse = 1 + Math.sin(G.t*0.012)*0.08;
-    ctx.scale(pulse, pulse);
-    // Outer orange/red glow
+    // 2. Rim light (bottom-right rim)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const gg = ctx.createRadialGradient(0,0,3, 0,0, c.r*1.4);
-    gg.addColorStop(0, 'rgba(255,180,60,0.7)');
-    gg.addColorStop(0.5, 'rgba(255,80,40,0.4)');
-    gg.addColorStop(1, 'rgba(255,80,40,0)');
-    ctx.fillStyle = gg;
-    ctx.beginPath(); ctx.arc(0,0, c.r*1.4, 0, Math.PI*2); ctx.fill();
+    const rimG = ctx.createRadialGradient(c.r*0.55, c.r*0.55, c.r*0.55, 0, 0, c.r*1.02);
+    rimG.addColorStop(0, 'rgba(140,230,255,0)');
+    rimG.addColorStop(0.9, 'rgba(140,230,255,0)');
+    rimG.addColorStop(0.97, 'rgba(200,250,255,0.6)');
+    rimG.addColorStop(1, 'rgba(140,230,255,0)');
+    ctx.fillStyle = rimG;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // Red-orange disk body
-    const bg = ctx.createRadialGradient(-3,-3,2, 0, 0, c.r);
-    bg.addColorStop(0, '#ffd080');
-    bg.addColorStop(0.5, '#ff6a40');
-    bg.addColorStop(1, '#a02010');
-    ctx.fillStyle = bg;
-    ctx.beginPath(); ctx.arc(0,0, c.r, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#5a1000'; ctx.lineWidth = 2;
+    // 3. Hex-mesh pattern inside (tech shield)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0,0,c.r-1,0,Math.PI*2); ctx.clip();
+    ctx.strokeStyle = 'rgba(200,250,255,0.5)';
+    ctx.lineWidth = 0.7;
+    const hs = 5;
+    for(let hy=-c.r; hy<c.r; hy+=hs*1.5){
+      for(let hx=-c.r; hx<c.r; hx+=hs*Math.sqrt(3)){
+        const col = Math.floor((hx+c.r)/(hs*Math.sqrt(3)));
+        const yAdj = (col%2===0) ? 0 : hs*0.75;
+        ctx.beginPath();
+        for(let k=0;k<6;k++){
+          const a = (k/6)*Math.PI*2 + Math.PI/6;
+          const px = hx + Math.cos(a)*hs;
+          const py = hy + yAdj + Math.sin(a)*hs;
+          if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // 4. Rotating energy arcs (2 counter-rotating)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(let k=0; k<2; k++){
+      const dir = k%2===0 ? 1 : -1;
+      const ph = G.t*0.005*dir + k*Math.PI;
+      ctx.strokeStyle = 'rgba(180,240,255,0.85)';
+      ctx.lineWidth = 1.8; ctx.lineCap='round';
+      ctx.beginPath();
+      ctx.arc(0, 0, c.r*0.75, ph, ph+1.2);
+      ctx.stroke();
+      // inner arc highlight
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath();
+      ctx.arc(0, 0, c.r*0.75, ph+0.15, ph+1);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 5. Primary specular top-left
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.35, -c.r*0.4, c.r*0.2, c.r*0.12, -0.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 6. Outline (bright cyan edge)
+    ctx.strokeStyle = 'rgba(200,240,255,0.85)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0,0,c.r,0,Math.PI*2); ctx.stroke();
+    // 7. 3D Shield emblem in center (with depth — shadow offset + gradient)
+    // emblem shadow
+    ctx.fillStyle = 'rgba(0,30,60,0.5)';
+    ctx.beginPath();
+    ctx.moveTo(0, -c.r*0.5+2);
+    ctx.lineTo(c.r*0.36, -c.r*0.22+2); ctx.lineTo(c.r*0.36, c.r*0.22+2);
+    ctx.lineTo(0, c.r*0.52+2);
+    ctx.lineTo(-c.r*0.36, c.r*0.22+2); ctx.lineTo(-c.r*0.36, -c.r*0.22+2);
+    ctx.closePath(); ctx.fill();
+    // emblem body (3D shield shape with gradient)
+    const egG = ctx.createLinearGradient(0, -c.r*0.5, 0, c.r*0.5);
+    egG.addColorStop(0, '#ffffff');
+    egG.addColorStop(0.5, '#d4f0ff');
+    egG.addColorStop(1, '#7ac4e8');
+    ctx.fillStyle = egG;
+    ctx.beginPath();
+    ctx.moveTo(0, -c.r*0.5);
+    ctx.lineTo(c.r*0.36, -c.r*0.22); ctx.lineTo(c.r*0.36, c.r*0.22);
+    ctx.lineTo(0, c.r*0.52);
+    ctx.lineTo(-c.r*0.36, c.r*0.22); ctx.lineTo(-c.r*0.36, -c.r*0.22);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0a3868'; ctx.lineWidth = 1.3;
     ctx.stroke();
-    // Big white down-arrow
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = '#5a1000';
-    ctx.lineWidth = 1.2;
+    // inner star on emblem
+    ctx.fillStyle = '#ff4db8';
+    ctx.beginPath();
+    for(let i=0;i<10;i++){
+      const a = (i/10)*Math.PI*2 - Math.PI/2;
+      const rr = i%2===0 ? c.r*0.2 : c.r*0.09;
+      const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  else if(c.kind==='magnet'){
+    // -------- 3D HORSESHOE MAGNET with glowing poles + attraction lines --------
+    // 1. Body gradient (U-shape made of 2 vertical bars + curved cap on top)
+    //    Slight bob to feel alive
+    const bob = Math.sin(G.t*0.008 + c.t)*1.5;
+    ctx.save();
+    ctx.translate(0, bob);
+    // contact shadow under magnet
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(0, c.r*0.95, c.r*0.7, c.r*0.18, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // magnetic field wavy lines (animated)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,140,210,0.5)';
+    ctx.lineWidth = 1.1;
+    for(let k=0; k<3; k++){
+      const ph = (G.t*0.008 + k*0.5) % 1;
+      const rad = c.r*1.1 + ph*c.r*0.5;
+      ctx.globalAlpha = (1-ph)*0.7;
+      ctx.beginPath();
+      ctx.ellipse(0, -c.r*0.2, rad, rad*0.35, 0, Math.PI, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // red section (top arc + upper legs)
+    const redG = ctx.createLinearGradient(-c.r*0.7, -c.r*0.6, c.r*0.7, -c.r*0.6);
+    redG.addColorStop(0, '#4a0a14');
+    redG.addColorStop(0.3, '#c03048');
+    redG.addColorStop(0.5, '#ff5070');
+    redG.addColorStop(0.7, '#c03048');
+    redG.addColorStop(1, '#4a0a14');
+    ctx.fillStyle = redG;
+    ctx.strokeStyle = '#2a0608'; ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    // outer horseshoe
+    ctx.moveTo(-c.r*0.72, c.r*0.2);
+    ctx.lineTo(-c.r*0.72, -c.r*0.2);
+    ctx.bezierCurveTo(-c.r*0.72, -c.r*0.85, c.r*0.72, -c.r*0.85, c.r*0.72, -c.r*0.2);
+    ctx.lineTo(c.r*0.72, c.r*0.2);
+    // top of right pole (hook back)
+    ctx.lineTo(c.r*0.4, c.r*0.2);
+    ctx.lineTo(c.r*0.4, -c.r*0.15);
+    ctx.bezierCurveTo(c.r*0.4, -c.r*0.5, -c.r*0.4, -c.r*0.5, -c.r*0.4, -c.r*0.15);
+    ctx.lineTo(-c.r*0.4, c.r*0.2);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // inner highlight on top arc (primary shine)
+    ctx.strokeStyle = 'rgba(255,220,230,0.7)';
+    ctx.lineWidth = 1.5; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.arc(0, -c.r*0.45, c.r*0.55, -Math.PI*0.85, -Math.PI*0.55);
+    ctx.stroke();
+
+    // 2. Pole tips (white/silver metal caps at bottom of each leg)
+    // Left pole cap
+    const plG = ctx.createLinearGradient(-c.r*0.72, c.r*0.2, -c.r*0.4, c.r*0.2);
+    plG.addColorStop(0, '#8a9aae');
+    plG.addColorStop(0.5, '#ffffff');
+    plG.addColorStop(1, '#5a6880');
+    ctx.fillStyle = plG;
+    roundRect(-c.r*0.75, c.r*0.2, c.r*0.37, c.r*0.35, 3); ctx.fill();
+    ctx.strokeStyle = '#2a3040'; ctx.lineWidth = 1;
+    roundRect(-c.r*0.75, c.r*0.2, c.r*0.37, c.r*0.35, 3); ctx.stroke();
+    // N label
+    ctx.fillStyle = '#2a3040'; ctx.font='900 7px Chakra Petch'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('N', -c.r*0.56, c.r*0.38);
+    // Right pole cap
+    const prG = ctx.createLinearGradient(c.r*0.4, c.r*0.2, c.r*0.72, c.r*0.2);
+    prG.addColorStop(0, '#5a6880');
+    prG.addColorStop(0.5, '#ffffff');
+    prG.addColorStop(1, '#8a9aae');
+    ctx.fillStyle = prG;
+    roundRect(c.r*0.38, c.r*0.2, c.r*0.37, c.r*0.35, 3); ctx.fill();
+    ctx.strokeStyle = '#2a3040'; ctx.lineWidth = 1;
+    roundRect(c.r*0.38, c.r*0.2, c.r*0.37, c.r*0.35, 3); ctx.stroke();
+    // S label
+    ctx.fillStyle = '#2a3040';
+    ctx.fillText('S', c.r*0.56, c.r*0.38);
+
+    // 3. Pole glow (attracting energy visible at tips)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(const px of [-c.r*0.56, c.r*0.56]){
+      const pulse = 0.7 + Math.sin(G.t*0.012)*0.3;
+      const pg = ctx.createRadialGradient(px, c.r*0.55, 0, px, c.r*0.55, c.r*0.35);
+      pg.addColorStop(0, `rgba(255,150,210,${pulse*0.7})`);
+      pg.addColorStop(1, 'rgba(255,100,180,0)');
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.arc(px, c.r*0.55, c.r*0.35, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+  else if(c.kind==='rocket'){
+    // -------- 3D ROCKET with thruster flame + metal body --------
+    // 1. Thruster flame at bottom (3-layer)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const fLen = c.r*0.5 + Math.sin(G.t*0.08)*c.r*0.12;
+    // outer red
+    const f1 = ctx.createLinearGradient(0, c.r*0.45, 0, c.r*0.45+fLen);
+    f1.addColorStop(0, 'rgba(255,80,30,0.85)');
+    f1.addColorStop(1, 'rgba(255,50,20,0)');
+    ctx.fillStyle = f1;
+    ctx.beginPath();
+    ctx.moveTo(-c.r*0.28, c.r*0.45);
+    ctx.quadraticCurveTo(0, c.r*0.45+fLen*1.1, c.r*0.28, c.r*0.45);
+    ctx.closePath(); ctx.fill();
+    // mid yellow
+    const f2 = ctx.createLinearGradient(0, c.r*0.45, 0, c.r*0.45+fLen*0.8);
+    f2.addColorStop(0, 'rgba(255,220,80,0.95)');
+    f2.addColorStop(1, 'rgba(255,150,40,0)');
+    ctx.fillStyle = f2;
+    ctx.beginPath();
+    ctx.moveTo(-c.r*0.18, c.r*0.45);
+    ctx.quadraticCurveTo(0, c.r*0.45+fLen*0.8, c.r*0.18, c.r*0.45);
+    ctx.closePath(); ctx.fill();
+    // white hot core
+    const f3 = ctx.createLinearGradient(0, c.r*0.45, 0, c.r*0.45+fLen*0.5);
+    f3.addColorStop(0, 'rgba(255,255,255,1)');
+    f3.addColorStop(1, 'rgba(255,220,160,0)');
+    ctx.fillStyle = f3;
+    ctx.beginPath();
+    ctx.moveTo(-c.r*0.08, c.r*0.45);
+    ctx.quadraticCurveTo(0, c.r*0.45+fLen*0.5, c.r*0.08, c.r*0.45);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // 2. Rocket body (teardrop cylinder, chromed with orange accent)
+    // nose cone (pointy top)
+    const ngG = ctx.createLinearGradient(-c.r*0.4, -c.r*0.8, c.r*0.4, -c.r*0.3);
+    ngG.addColorStop(0, '#ffd8c8');
+    ngG.addColorStop(0.4, '#ff8a60');
+    ngG.addColorStop(0.75, '#c83820');
+    ngG.addColorStop(1, '#6a1408');
+    ctx.fillStyle = ngG;
+    ctx.beginPath();
+    ctx.moveTo(0, -c.r*0.85);
+    ctx.bezierCurveTo(c.r*0.35, -c.r*0.55, c.r*0.35, -c.r*0.3, c.r*0.3, -c.r*0.15);
+    ctx.lineTo(-c.r*0.3, -c.r*0.15);
+    ctx.bezierCurveTo(-c.r*0.35, -c.r*0.3, -c.r*0.35, -c.r*0.55, 0, -c.r*0.85);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#3a0a04'; ctx.lineWidth = 1;
+    ctx.stroke();
+    // main body cylinder (white with red stripe)
+    const bdG = ctx.createLinearGradient(-c.r*0.35, 0, c.r*0.35, 0);
+    bdG.addColorStop(0, '#2a2a3a');
+    bdG.addColorStop(0.25, '#c8cad4');
+    bdG.addColorStop(0.5, '#ffffff');
+    bdG.addColorStop(0.75, '#c8cad4');
+    bdG.addColorStop(1, '#2a2a3a');
+    ctx.fillStyle = bdG;
+    roundRect(-c.r*0.35, -c.r*0.15, c.r*0.7, c.r*0.6, 3); ctx.fill();
+    ctx.strokeStyle = '#1a1a28'; ctx.lineWidth = 1;
+    roundRect(-c.r*0.35, -c.r*0.15, c.r*0.7, c.r*0.6, 3); ctx.stroke();
+    // red stripe middle
+    ctx.fillStyle = '#ff4040';
+    ctx.fillRect(-c.r*0.35, -c.r*0.02, c.r*0.7, c.r*0.12);
+    // circular window
+    const wG = ctx.createRadialGradient(0, c.r*0.15, 0, 0, c.r*0.15, c.r*0.12);
+    wG.addColorStop(0, '#ffffff');
+    wG.addColorStop(0.5, '#7ac4e8');
+    wG.addColorStop(1, '#0a3868');
+    ctx.fillStyle = wG;
+    ctx.beginPath(); ctx.arc(0, c.r*0.22, c.r*0.11, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#1a2a48'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, c.r*0.22, c.r*0.11, 0, Math.PI*2); ctx.stroke();
+    // window shine
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(-c.r*0.04, c.r*0.18, c.r*0.035, 0, Math.PI*2); ctx.fill();
+    // fins (left + right)
+    ctx.fillStyle = '#ff4040';
+    ctx.strokeStyle = '#5a0808'; ctx.lineWidth = 1;
+    // left fin
+    ctx.beginPath();
+    ctx.moveTo(-c.r*0.35, c.r*0.25);
+    ctx.lineTo(-c.r*0.55, c.r*0.5);
+    ctx.lineTo(-c.r*0.35, c.r*0.45);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // right fin
+    ctx.beginPath();
+    ctx.moveTo(c.r*0.35, c.r*0.25);
+    ctx.lineTo(c.r*0.55, c.r*0.5);
+    ctx.lineTo(c.r*0.35, c.r*0.45);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // primary top-left specular on body
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    roundRect(-c.r*0.28, -c.r*0.12, c.r*0.08, c.r*0.5, 2); ctx.fill();
+    ctx.restore();
+  }
+  else if(c.kind==='dbl'){
+    // -------- 3D x2 MULTIPLIER — glossy gold coin with embossed "x2" --------
+    // Body (metallic radial gradient)
+    const bg = ctx.createRadialGradient(-c.r*0.35, -c.r*0.4, c.r*0.08, 0, 0, c.r);
+    bg.addColorStop(0,    '#fffaa0');
+    bg.addColorStop(0.25, '#fff380');
+    bg.addColorStop(0.55, '#ffd54a');
+    bg.addColorStop(0.85, '#b88a10');
+    bg.addColorStop(1,    '#5a3a00');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
+    // Rim light (bottom-right golden edge)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const rimG = ctx.createRadialGradient(c.r*0.55, c.r*0.55, c.r*0.55, 0, 0, c.r*1.02);
+    rimG.addColorStop(0, 'rgba(255,220,120,0)');
+    rimG.addColorStop(0.9, 'rgba(255,220,120,0)');
+    rimG.addColorStop(0.97, 'rgba(255,240,180,0.6)');
+    rimG.addColorStop(1, 'rgba(255,220,120,0)');
+    ctx.fillStyle = rimG;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // Dark contour outline
+    ctx.strokeStyle = '#3a2606'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.stroke();
+    // Inner bevel ring (engraved edge)
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.arc(0, 0, c.r*0.82, 0, Math.PI*2); ctx.stroke();
+    // specular top-left
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.35, -c.r*0.42, c.r*0.22, c.r*0.13, -0.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // Embossed "x2" text with shadow for depth
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = '900 ' + Math.floor(c.r*0.7) + 'px Russo One, sans-serif';
+    // dark shadow (embossed)
+    ctx.fillStyle = 'rgba(80,50,0,0.7)';
+    ctx.fillText('×2', 1.2, 2.2);
+    // bright front
+    const tg = ctx.createLinearGradient(0, -c.r*0.35, 0, c.r*0.35);
+    tg.addColorStop(0, '#fffff0');
+    tg.addColorStop(0.5, '#ffeda0');
+    tg.addColorStop(1, '#c88820');
+    ctx.fillStyle = tg;
+    ctx.fillText('×2', 0, 1);
+    // outline on text
+    ctx.strokeStyle = '#5a3a00'; ctx.lineWidth = 0.9;
+    ctx.strokeText('×2', 0, 1);
+  }
+  else if(c.kind==='smash'){
+    // -------- 3D SMASH DISK — fiery orange orb with embossed down-arrow --------
+    const pulse = 1 + Math.sin(G.t*0.012)*0.06;
+    ctx.scale(pulse, pulse);
+    // 1. Body — 5-stop molten gradient
+    const bg = ctx.createRadialGradient(-c.r*0.3, -c.r*0.4, c.r*0.08, 0, 0, c.r);
+    bg.addColorStop(0,    '#fff8d0');
+    bg.addColorStop(0.2,  '#ffb060');
+    bg.addColorStop(0.55, '#ff6030');
+    bg.addColorStop(0.85, '#a02010');
+    bg.addColorStop(1,    '#3a0804');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
+    // 2. Rim light bottom-right
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const rimG = ctx.createRadialGradient(c.r*0.55, c.r*0.55, c.r*0.55, 0, 0, c.r*1.02);
+    rimG.addColorStop(0, 'rgba(255,180,100,0)');
+    rimG.addColorStop(0.9, 'rgba(255,180,100,0)');
+    rimG.addColorStop(0.97, 'rgba(255,220,140,0.65)');
+    rimG.addColorStop(1, 'rgba(255,180,100,0)');
+    ctx.fillStyle = rimG;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 3. Dark contour
+    ctx.strokeStyle = '#2a0408'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.arc(0, 0, c.r, 0, Math.PI*2); ctx.stroke();
+    // 4. Rotating inner heat ring (clipped to disk)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 0, c.r-1, 0, Math.PI*2); ctx.clip();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,220,100,0.7)';
+    ctx.lineWidth = 2;
+    ctx.rotate(G.t*0.006);
+    for(let k=0; k<6; k++){
+      ctx.rotate(Math.PI/3);
+      ctx.beginPath();
+      ctx.moveTo(c.r*0.3, 0); ctx.lineTo(c.r*0.7, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 5. Specular top-left
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,230,0.65)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.35, -c.r*0.42, c.r*0.22, c.r*0.13, -0.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 6. 3D down-arrow with shadow depth
+    // shadow copy (offset down-right)
+    ctx.fillStyle = 'rgba(60,10,0,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(-c.r*0.45+1.2, -c.r*0.15+1.2);
+    ctx.lineTo(-c.r*0.15+1.2, -c.r*0.15+1.2);
+    ctx.lineTo(-c.r*0.15+1.2, -c.r*0.55+1.2);
+    ctx.lineTo(c.r*0.15+1.2, -c.r*0.55+1.2);
+    ctx.lineTo(c.r*0.15+1.2, -c.r*0.15+1.2);
+    ctx.lineTo(c.r*0.45+1.2, -c.r*0.15+1.2);
+    ctx.lineTo(0+1.2, c.r*0.55+1.2);
+    ctx.closePath(); ctx.fill();
+    // arrow fill (vertical white-to-cream gradient)
+    const arG = ctx.createLinearGradient(0, -c.r*0.55, 0, c.r*0.55);
+    arG.addColorStop(0, '#ffffff');
+    arG.addColorStop(0.7, '#ffeab0');
+    arG.addColorStop(1, '#d8a240');
+    ctx.fillStyle = arG;
+    ctx.strokeStyle = '#5a1008';
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
     ctx.moveTo(-c.r*0.45, -c.r*0.15);
     ctx.lineTo(-c.r*0.15, -c.r*0.15);
@@ -5352,101 +5896,201 @@ function drawCollectible(c){
     ctx.lineTo(0, c.r*0.55);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
-    // Impact lines at bottom
-    ctx.strokeStyle = '#ffe070'; ctx.lineWidth = 1.5; ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(-c.r*0.6, c.r*0.8); ctx.lineTo(-c.r*0.35, c.r*0.55); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(c.r*0.6, c.r*0.8); ctx.lineTo(c.r*0.35, c.r*0.55); ctx.stroke();
+    // 7. Impact sparks at bottom (pulsing)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,220,100,0.9)'; ctx.lineWidth = 1.6; ctx.lineCap='round';
+    for(const s of [[-1,-0.25], [1,0.25]]){
+      ctx.beginPath();
+      ctx.moveTo(s[0]*c.r*0.6, c.r*0.85 + s[1]*2);
+      ctx.lineTo(s[0]*c.r*0.35, c.r*0.55 + s[1]*2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
   else if(c.kind==='supersparkle'){
-    // Giant rainbow sparkle — W1 welcome gift
+    // -------- GIANT RAINBOW SUPER-SPARKLE — W1 welcome gift (legendary tier) --------
     const hue = (G.t*0.15)%360;
-    const pulse = 1 + Math.sin(G.t*0.015)*0.12;
-    const sparkSize = c.r*0.45 + Math.sin(G.t*0.03)*c.r*0.15;
+    const pulse = 1 + Math.sin(G.t*0.015)*0.10;
+    const sparkSize = c.r*0.45 + Math.sin(G.t*0.03)*c.r*0.12;
     ctx.scale(pulse, pulse);
-    // Giant multi-layer halo (rainbow)
+    // 1. Giant 3-layer rainbow halo
     ctx.save();
     ctx.globalCompositeOperation='lighter';
     for(let layer=0; layer<3; layer++){
       const hh = (hue + layer*120)%360;
       const hg = ctx.createRadialGradient(0,0,0, 0,0, c.r*(1.8+layer*0.4));
-      hg.addColorStop(0, `hsla(${hh},100%,70%,${0.7-layer*0.2})`);
+      hg.addColorStop(0, `hsla(${hh},100%,70%,${0.5-layer*0.15})`);  // reduced 30% overall
       hg.addColorStop(1, `hsla(${hh},100%,70%,0)`);
       ctx.fillStyle = hg;
       ctx.beginPath(); ctx.arc(0,0, c.r*(1.8+layer*0.4), 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
-    // 12 raze (double-density of normal spark)
+    // 2. 12 long rays with gradient (each ray color-shifted)
     ctx.save();
-    ctx.strokeStyle = `hsl(${hue},100%,70%)`;
-    ctx.lineWidth = 3.5; ctx.lineCap='round';
+    ctx.lineCap='round';
     const rays = 12;
     for(let i=0;i<rays;i++){
       const a = (i/rays)*Math.PI*2 + G.t*0.006;
-      const outer = sparkSize + (i%2 ? c.r*0.4 : c.r*0.15);
+      const outer = sparkSize + (i%2 ? c.r*0.45 : c.r*0.2);
+      const rayHue = (hue + i*30) % 360;
+      // ray gradient (bright at tip, fades at root)
+      const rgd = ctx.createLinearGradient(
+        Math.cos(a)*c.r*0.2, Math.sin(a)*c.r*0.2,
+        Math.cos(a)*(outer+c.r*0.5), Math.sin(a)*(outer+c.r*0.5)
+      );
+      rgd.addColorStop(0, `hsla(${rayHue},100%,85%,0.95)`);
+      rgd.addColorStop(1, `hsla(${rayHue},100%,70%,0.3)`);
+      ctx.strokeStyle = rgd;
+      ctx.lineWidth = i%2===0 ? 3.5 : 2;
       ctx.beginPath();
       ctx.moveTo(Math.cos(a)*c.r*0.2, Math.sin(a)*c.r*0.2);
       ctx.lineTo(Math.cos(a)*(outer+c.r*0.5), Math.sin(a)*(outer+c.r*0.5));
       ctx.stroke();
     }
-    // Inner rainbow core
-    const cg = ctx.createRadialGradient(0,0,0, 0,0, c.r*0.5);
-    cg.addColorStop(0, '#ffffff');
-    cg.addColorStop(0.4, `hsl(${(hue+60)%360},100%,75%)`);
-    cg.addColorStop(1, `hsl(${hue},100%,55%)`);
-    ctx.fillStyle = cg;
-    ctx.beginPath(); ctx.arc(0, 0, c.r*0.45, 0, Math.PI*2); ctx.fill();
-    // Super-bright white hot center
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(0, 0, c.r*0.2, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // Floating "GIFT!" label above
+    // 3. 3D gem-like core (5-stop rainbow gradient with depth)
     ctx.save();
-    ctx.fillStyle = `hsl(${hue},100%,70%)`;
-    ctx.font = 'bold 11px Chakra Petch';
-    ctx.textAlign = 'center';
-    ctx.globalAlpha = 0.8 + Math.sin(G.t*0.01)*0.2;
-    ctx.fillText('🎁 GIFT', 0, -c.r-10);
+    // outer rainbow disc
+    const cg = ctx.createRadialGradient(-c.r*0.15, -c.r*0.15, 0, 0, 0, c.r*0.55);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(0.25, `hsl(${(hue+60)%360},100%,85%)`);
+    cg.addColorStop(0.55, `hsl(${hue},100%,70%)`);
+    cg.addColorStop(0.85, `hsl(${(hue-30+360)%360},85%,55%)`);
+    cg.addColorStop(1, `hsl(${hue},100%,40%)`);
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(0, 0, c.r*0.48, 0, Math.PI*2); ctx.fill();
+    // rim light
+    ctx.globalCompositeOperation='lighter';
+    const rim = ctx.createRadialGradient(c.r*0.3, c.r*0.3, c.r*0.3, 0, 0, c.r*0.5);
+    rim.addColorStop(0, 'rgba(255,255,255,0)');
+    rim.addColorStop(0.92, `hsla(${hue},100%,85%,0.6)`);
+    rim.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rim;
+    ctx.beginPath(); ctx.arc(0, 0, c.r*0.48, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 4. Specular top-left
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.ellipse(-c.r*0.18, -c.r*0.2, c.r*0.1, c.r*0.08, -0.4, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 5. White-hot inner star core
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const cor = ctx.createRadialGradient(0, 0, 0, 0, 0, c.r*0.22);
+    cor.addColorStop(0, '#ffffff');
+    cor.addColorStop(0.6, 'rgba(255,255,255,0.8)');
+    cor.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = cor;
+    ctx.beginPath(); ctx.arc(0, 0, c.r*0.22, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 6. Floating "GIFT!" label above with pulsing glow
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline='middle';
+    ctx.font = '900 12px Chakra Petch';
+    const lbl = '🎁 GIFT';
+    const lblY = -c.r-14 + Math.sin(G.t*0.008)*2;
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillText(lbl, 0.5, lblY+1);
+    // rainbow fill
+    ctx.fillStyle = `hsl(${hue},100%,75%)`;
+    ctx.globalAlpha = 0.85 + Math.sin(G.t*0.01)*0.15;
+    ctx.fillText(lbl, 0, lblY);
     ctx.restore();
   }
   else if(c.kind==='slowmo'){
-    // blue crystal shape
-    ctx.rotate(Math.sin(G.t*0.003+c.t)*0.18);
+    // -------- 3D SLOWMO CRYSTAL — pentagonal ice crystal with inset clock --------
+    ctx.rotate(Math.sin(G.t*0.003+c.t)*0.12);
     const s = c.r;
-    const g = ctx.createLinearGradient(0,-s,0,s);
-    g.addColorStop(0, '#e8fcff');
-    g.addColorStop(0.5, '#80d8ff');
-    g.addColorStop(1, '#2070b0');
+    // 1. Outer glow halo (time dilation feel)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const timeAura = ctx.createRadialGradient(0, 0, s*0.5, 0, 0, s*1.3);
+    timeAura.addColorStop(0, 'rgba(140,220,255,0.35)');
+    timeAura.addColorStop(1, 'rgba(140,220,255,0)');
+    ctx.fillStyle = timeAura;
+    ctx.beginPath(); ctx.arc(0, 0, s*1.3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // 2. Crystal body with 5-stop ice gradient
+    const g = ctx.createLinearGradient(-s*0.3, -s, s*0.3, s);
+    g.addColorStop(0,    '#ffffff');
+    g.addColorStop(0.25, '#d0f4ff');
+    g.addColorStop(0.55, '#7acce8');
+    g.addColorStop(0.85, '#2070b0');
+    g.addColorStop(1,    '#0a2040');
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(0,-s);
-    ctx.lineTo(s*0.7, -s*0.2);
+    ctx.lineTo(s*0.72, -s*0.2);
     ctx.lineTo(s*0.5, s);
     ctx.lineTo(-s*0.5, s);
-    ctx.lineTo(-s*0.7, -s*0.2);
+    ctx.lineTo(-s*0.72, -s*0.2);
     ctx.closePath(); ctx.fill();
-    // facet lines
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.3;
+    // 3. Outline
+    ctx.strokeStyle = '#042044'; ctx.lineWidth = 1.2;
+    ctx.stroke();
+    // 4. Facet separator lines (glossy cross pattern)
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.moveTo(0,-s); ctx.lineTo(0,s);
-    ctx.moveTo(-s*0.7,-s*0.2); ctx.lineTo(s*0.7,-s*0.2);
+    ctx.moveTo(-s*0.72,-s*0.2); ctx.lineTo(s*0.72,-s*0.2);
     ctx.stroke();
-    // crown highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    // 5. Crown highlight (top triangle bright)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath();
     ctx.moveTo(0,-s);
-    ctx.lineTo(s*0.3, -s*0.35);
-    ctx.lineTo(-s*0.3, -s*0.35);
+    ctx.lineTo(s*0.32, -s*0.35);
+    ctx.lineTo(0, -s*0.2);
+    ctx.lineTo(-s*0.32, -s*0.35);
     ctx.closePath(); ctx.fill();
-    // clock icon center
-    ctx.fillStyle = '#0a3050';
-    ctx.beginPath(); ctx.arc(0, s*0.25, 5, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle='#e0f4ff'; ctx.lineWidth=1.2;
+    ctx.restore();
+    // 6. Secondary small catchlight near tip
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.beginPath(); ctx.arc(0, -s*0.82, 1.3, 0, Math.PI*2); ctx.fill();
+    // 7. Inset 3D clock (bottom center, embossed)
+    // clock shadow
+    ctx.fillStyle = 'rgba(0,20,40,0.7)';
+    ctx.beginPath(); ctx.arc(0.7, s*0.28+0.7, 6.2, 0, Math.PI*2); ctx.fill();
+    // clock body (dark navy)
+    const clG = ctx.createRadialGradient(-1.5, s*0.22, 0, 0, s*0.28, 6);
+    clG.addColorStop(0, '#2a5888');
+    clG.addColorStop(0.6, '#0a3050');
+    clG.addColorStop(1, '#020a20');
+    ctx.fillStyle = clG;
+    ctx.beginPath(); ctx.arc(0, s*0.28, 6, 0, Math.PI*2); ctx.fill();
+    // clock rim highlight
+    ctx.strokeStyle = 'rgba(180,240,255,0.85)'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.arc(0, s*0.28, 6, 0, Math.PI*2); ctx.stroke();
+    // clock hands (12 + 2 position, slowly ticking)
+    ctx.strokeStyle = '#e0f4ff'; ctx.lineWidth = 1.3; ctx.lineCap='round';
+    const tickPhase = G.t*0.001;
+    // hour hand
     ctx.beginPath();
-    ctx.moveTo(0, s*0.25); ctx.lineTo(0, s*0.12);
-    ctx.moveTo(0, s*0.25); ctx.lineTo(s*0.08, s*0.3);
+    ctx.moveTo(0, s*0.28);
+    ctx.lineTo(Math.cos(tickPhase*0.3 - Math.PI/2)*3, s*0.28 + Math.sin(tickPhase*0.3 - Math.PI/2)*3);
     ctx.stroke();
+    // minute hand
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, s*0.28);
+    ctx.lineTo(Math.cos(tickPhase*1.2 - Math.PI/2)*4.5, s*0.28 + Math.sin(tickPhase*1.2 - Math.PI/2)*4.5);
+    ctx.stroke();
+    // center dot
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(0, s*0.28, 0.8, 0, Math.PI*2); ctx.fill();
+    // 12/3/6/9 tick marks
+    ctx.strokeStyle = 'rgba(200,240,255,0.8)'; ctx.lineWidth = 0.6;
+    for(let k=0; k<4; k++){
+      const ta = k*Math.PI/2 - Math.PI/2;
+      ctx.beginPath();
+      ctx.moveTo(0 + Math.cos(ta)*5, s*0.28 + Math.sin(ta)*5);
+      ctx.lineTo(0 + Math.cos(ta)*5.8, s*0.28 + Math.sin(ta)*5.8);
+      ctx.stroke();
+    }
   }
   ctx.restore();
 }
