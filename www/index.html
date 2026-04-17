@@ -740,9 +740,14 @@ const G = window.G = {
   coinRushActive: false, coinRushTimer: 0, coinRushSpawn: 0, nextCoinRushAt: 1800,
   // Coin milestone (every 20 coins → +10 fuse bonus)
   coinMilestone: 0,
+  // Coin chain (consecutive sparks within 2s window → +bonus sparks)
+  coinChainCount: 0, coinChainTimer: 0,
   // In-run achievements (reset each run)
   runAch: {},
   runStomps: 0,
+  // First-time achievement milestones (persistent, saved across runs/sessions)
+  // Fires once ever per profile → gem rewards for discovering mechanics
+  firstTime: loadSaved('br_first', {}),
   // Near-miss combo (stacks on consecutive close-calls, resets on damage)
   nearMissStreak: 0,
   // Intro countdown at start of every run
@@ -757,6 +762,8 @@ const G = window.G = {
   bossWaveType: 'fire',  // 'fire' | 'ice' | 'neon' | 'void' — per world theme
   // Mini-wave (triggered by speed tier milestones — shorter than boss, less damaging)
   miniWaveActive: false, miniWaveTimer: 0, miniWaveX: -200,
+  // World entry challenge (optional mini-goal at start of each world for +gems)
+  challengeType: null, challengeProgress: 0, challengeTarget: 0, challengeTimer: 0, challengeDone: false,
   // Speed tier — increases every 1000m within current world (0..4)
   speedTier: 0, nextSpeedTierAt: 1000,
   // Distance milestone markers — every 500m subtle celebration
@@ -921,6 +928,7 @@ function onTap(px,py){
       G.shockwaves.push({x:B.x, y:B.y+6, r:8, maxR:70, life:1, color:C.water});
       G.shockwaves.push({x:B.x, y:B.y+6, r:14, maxR:95, life:1, color:C.coinHi});
       popup(B.x, B.y-70, 'TRIPLE!', C.coinHi, 1.25);
+      markFirstTime('firstTriple');
     }
     // NO MORE automatic ground pound on 4th tap — move to swipe-down gesture
     // (prevents accidental pounds when player just mashes to jump)
@@ -957,6 +965,7 @@ function tryDownAction(){
     B.vy = 22;
     B.pounding = true;
     B.squashX = 0.7; B.squashY = 1.4;
+    markFirstTime('firstPound');
     sfx('djump');
     spawnBurst(B.x, B.y, C.fireHi, 12);
     // Popup so player sees feedback that swipe worked
@@ -1067,6 +1076,44 @@ function spawnConfetti(x,y){
 }
 function popup(x,y,text,color,scale=1){
   G.popups.push({x,y,text,color,life:1,max:60,vy:-2,scale});
+}
+
+// ============================================================================
+//  FIRST-TIME ACHIEVEMENTS — small celebrations on first-ever events per profile
+//  Persists to localStorage via G.firstTime. Fires once ever, then silent.
+// ============================================================================
+const FIRST_TIME_ACH = {
+  firstStomp:     { title:'FIRST STOMP!',      sub:'Jump on enemies for +coins',    gems:2, coins:0 },
+  firstTriple:    { title:'FIRST TRIPLE JUMP!',sub:'Reach new heights!',            gems:3, coins:0 },
+  firstCombo:     { title:'FIRST COMBO x3!',   sub:'Keep chaining for more coins',  gems:0, coins:10 },
+  firstNearMiss:  { title:'FIRST NEAR-MISS!',  sub:'Grazing obstacles = bonus',     gems:0, coins:5 },
+  first100m:      { title:'FIRST 100m!',       sub:'You got the hang of it',        gems:1, coins:0 },
+  first500m:      { title:'FIRST 500m!',       sub:'Real runner now',               gems:2, coins:0 },
+  firstPound:     { title:'FIRST GROUND POUND!', sub:'Swipe down to clear enemies', gems:2, coins:0 },
+  firstGem:       { title:'FIRST GEM!',        sub:'Save for skins + revives',      gems:0, coins:0 },
+  firstMystery:   { title:'FIRST MYSTERY BOX!', sub:'Random jackpots!',             gems:1, coins:0 },
+  firstShield:    { title:'FIRST SHIELD!',     sub:'Absorbs 3 hits before breaks',  gems:0, coins:5 },
+};
+function markFirstTime(key){
+  if(G.firstTime[key]) return; // already done
+  const ach = FIRST_TIME_ACH[key];
+  if(!ach) return;
+  G.firstTime[key] = true;
+  save('br_first', G.firstTime);
+  // Reward
+  if(ach.gems) G.runGems += ach.gems;
+  if(ach.coins) G.runCoins += ach.coins;
+  // Celebration — gold popup with achievement styling
+  popup(W/2, H/2-40, '🏆 '+ach.title, '#ffd54a', 1.8);
+  popup(W/2, H/2, ach.sub, '#fff', 1.0);
+  const rewardText = [];
+  if(ach.gems) rewardText.push('+'+ach.gems+' 💎');
+  if(ach.coins) rewardText.push('+'+ach.coins+' ✨');
+  if(rewardText.length) popup(W/2, H/2+35, rewardText.join(' • '), '#ffc080', 1.2);
+  G.shockwaves.push({x:W/2, y:H/2, r:10, maxR:260, life:1, color:'#ffd54a'});
+  G.flash = 0.5; G.shake = 8;
+  sfx('gem');
+  setTimeout(()=>sfx('power'), 120);
 }
 function spawnCoinBurst(x, y, count){
   // Mini physics coins that fly out and settle, collectable
@@ -1527,6 +1574,8 @@ function startGame(){
   G.miniWaveActive=false; G.miniWaveTimer=0; G.miniWaveX=-200;
   G.speedTier = 0; G.nextSpeedTierAt = 1000;
   G.nextDistMark = 500;
+  G.coinChainCount = 0; G.coinChainTimer = 0;
+  G.challengeType = null; G.challengeProgress = 0; G.challengeTarget = 0; G.challengeTimer = 0; G.challengeDone = false;
   G.bossWaveX = -300;
   B.x=W*0.22; B.y=GND-B.r-8; B.vy=0; B.grounded=true; B.jumps=0;
   B.jumpBuffer=0; B.coyote=0; B.jumpHeld=false;
@@ -1720,6 +1769,23 @@ function waveTypeForWorld(w){
   return 'fire';
 }
 
+// Random challenge at world entry — 30s goal with gem reward
+function startWorldChallenge(){
+  const types = [
+    { type:'stomps',  target:3, label:'Stomp 3 enemies' },
+    { type:'sparks',  target:30, label:'Collect 30 sparks' },
+    { type:'combo',   target:5, label:'Chain combo x5' },
+    { type:'nearmiss',target:4, label:'4 near-misses' },
+  ];
+  const pick = types[Math.floor(Math.random()*types.length)];
+  G.challengeType = pick.type;
+  G.challengeTarget = pick.target;
+  G.challengeProgress = 0;
+  G.challengeTimer = 30000;
+  G.challengeDone = false;
+  popup(W/2, H/2+100, '🎯 CHALLENGE: '+pick.label, '#ffd54a', 1.2);
+}
+
 function onWorldUp(){
   const w = WORLDS[G.world-1];
   // Apply new difficulty live
@@ -1728,6 +1794,8 @@ function onWorldUp(){
   G.accel     = w.accel;
   G.fuseDrain = w.drain * (1 - 0.03*G.upgrades.slowBurn);
   G.bossWaveType = waveTypeForWorld(G.world);
+  // Start challenge on W2+ (not W1 — let player get oriented first)
+  if(G.world >= 2) startWorldChallenge();
   // Show world-up once, then unlock-specific follow-up tutorials
   showTutorial('worldup', true);
   if(G.world === UNLOCK.groundPound) showTutorial('groundPound', true);
@@ -1814,6 +1882,9 @@ function onSpeedTierUp(){
 // ============================================================================
 function onDistanceMark(){
   const mark = G.nextDistMark - 500;
+  // First-time distance achievements (fires once each per profile)
+  if(mark === 100) markFirstTime('first100m');
+  else if(mark === 500) markFirstTime('first500m');
   // Screen pulse + popup
   G.shockwaves.push({x:W/2, y:G.bossActive?220:140, r:8, maxR:180, life:1, color:currentWorld().accent});
   // Gem reward on every 500m
@@ -2255,26 +2326,30 @@ function update(dt){
             size:rand(3,7), g:0.25, shape:'circle',
           });
         }
-        // Buffed ×10: Ground pound was +1/+2 coins, now +10/+15 — parity with stomp chain
-        const obstPoundReward = isSmash ? 15 : 10;
+        // Ground Pound (free, W3+): enemy-only. Obstacles remain — must still jump over them.
+        // Smash item (paid): clears BOTH enemies AND obstacles as a premium AOE blast.
         const enemyPoundBonus = isSmash ? 8 : 5;
-        for(let j=G.obstacles.length-1;j>=0;j--){
-          const o = G.obstacles[j];
-          // Preserve mystery boxes (loot!) and bouncers (useful pads)
-          if(o.mystery || o.bouncer) continue;
-          if(Math.abs((o.x+o.w/2) - B.x) < aoe){
-            spawnBurst(o.x+o.w/2, o.y+o.h/2, C.fireHi, 14);
-            popup(o.x+o.w/2, o.y-10, '+'+obstPoundReward, C.coin, 1.1);
-            G.runCoins += obstPoundReward;
-            G.obstacles.splice(j,1);
+        if(isSmash){
+          // Full AOE clear — obstacles + enemies
+          const obstReward = 15;
+          for(let j=G.obstacles.length-1;j>=0;j--){
+            const o = G.obstacles[j];
+            if(o.mystery || o.bouncer) continue; // always preserve loot + pads
+            if(Math.abs((o.x+o.w/2) - B.x) < aoe){
+              spawnBurst(o.x+o.w/2, o.y+o.h/2, C.fireHi, 14);
+              popup(o.x+o.w/2, o.y-10, '+'+obstReward, C.coin, 1.1);
+              G.runCoins += obstReward;
+              G.obstacles.splice(j,1);
+            }
           }
         }
+        // Enemies always cleared on pound (that's the point of pound)
         for(let j=G.enemies.length-1;j>=0;j--){
           const e = G.enemies[j];
           if(Math.abs((e.x+e.w/2) - B.x) < aoe){
             const reward = (e.reward || 2) + enemyPoundBonus;
             spawnBurst(e.x+e.w/2, e.y+e.h/2, e.color||C.fire, 16);
-            popup(e.x+e.w/2, e.y, 'SMASH! +'+reward, C.coinHi, 1.3);
+            popup(e.x+e.w/2, e.y, (isSmash?'SMASH!':'POUND!')+' +'+reward, C.coinHi, 1.3);
             G.runCoins += reward;
             G.enemies.splice(j,1);
           }
@@ -2316,6 +2391,17 @@ function update(dt){
       if(B.trail.length > 6) B.trail.shift();
     }
   }
+  // Reactive expression — contextual overrides based on game state
+  // Priority (highest first): hurt > scared > excited > jump/run base
+  if(B.iframes > 20 && B.alive){
+    B.expression = 'hurt';  // just got damaged
+  } else if(G.feverActive || (G.combo >= 5 && G.comboTime > 800)){
+    B.expression = 'happy';  // hype — fever or high combo
+  } else if(G.fuse < 25 && G.state === 'play'){
+    B.expression = 'hurt';  // scared / panic
+  }
+  // Otherwise the earlier set from grounded/airborne branch stands (run/jump)
+
   // Update trail life
   for(let i=B.trail.length-1; i>=0; i--){
     B.trail[i].life -= 0.06;
@@ -2351,10 +2437,38 @@ function update(dt){
     onSpeedTierUp();
   }
 
+  // Coin chain timer decay — resets count if no coin picked for 2s
+  if(G.coinChainTimer > 0){
+    G.coinChainTimer -= dt;
+    if(G.coinChainTimer <= 0){
+      G.coinChainCount = 0;
+      G.coinChainTimer = 0;
+    }
+  }
+
   // ===== 500m DISTANCE MARKER — subtle celebration + gem reward =====
   if(G.distance >= G.nextDistMark){
     G.nextDistMark += 500;
     onDistanceMark();
+  }
+
+  // ===== WORLD CHALLENGE — tick timer, complete if target reached =====
+  if(G.challengeType && !G.challengeDone && G.challengeTimer > 0){
+    G.challengeTimer -= dt;
+    if(G.challengeTimer <= 0){
+      G.challengeType = null;  // timed out silently
+    } else if(G.challengeProgress >= G.challengeTarget){
+      G.challengeDone = true;
+      G.runGems += 5;
+      popup(W/2, H/2-30, '🎯 CHALLENGE COMPLETE!', '#ffd54a', 1.8);
+      popup(W/2, H/2+10, '+5 💎', '#ff4db8', 1.4);
+      G.shockwaves.push({x:W/2, y:H/2, r:10, maxR:280, life:1, color:'#ffd54a'});
+      G.flash = 0.5; G.shake = 8;
+      sfx('gem');
+      setTimeout(()=>sfx('power'), 100);
+      // Clear challenge after celebration
+      setTimeout(()=>{ G.challengeType = null; G.challengeDone = false; }, 2000);
+    }
   }
 
   // ===== MINI-WAVE — short fire wave that tracks player (triggered by speed tier) =====
@@ -2428,6 +2542,8 @@ function update(dt){
           }
           G.combo++; G.comboTime = 1400;
           if(G.combo>G.bestCombo) G.bestCombo = G.combo;
+          markFirstTime('firstNearMiss');
+          if(G.challengeType === 'nearmiss') G.challengeProgress++;
           sfx('whoosh');
           // Cyan speed-streak particles trailing behind player (satisfaction feedback)
           for(let k=0; k<4; k++){
@@ -2446,6 +2562,7 @@ function update(dt){
     if(checkCollide(B, o) && B.alive && B.iframes<=0 && !B.pounding){
       // MYSTERY BOX — crack open for random loot
       if(o.mystery){
+        markFirstTime('firstMystery');
         const roll = Math.random();
         G.shockwaves.push({x:o.x+o.w/2, y:o.y+o.h/2, r:12, maxR:200, life:1, color:C.coinHi});
         G.shockwaves.push({x:o.x+o.w/2, y:o.y+o.h/2, r:6, maxR:120, life:1, color:C.gem});
@@ -2579,6 +2696,12 @@ function update(dt){
       spawnCoinBurst(e.x+e.w/2, e.y+e.h/2, 4);
       G.combo++; G.comboTime=1400;
       if(G.combo>G.bestCombo) G.bestCombo=G.combo;
+      // First-time achievements
+      markFirstTime('firstStomp');
+      if(G.combo >= 3) markFirstTime('firstCombo');
+      // World challenge progress (stomps + combo)
+      if(G.challengeType === 'stomps') G.challengeProgress++;
+      if(G.challengeType === 'combo') G.challengeProgress = Math.max(G.challengeProgress, G.combo);
       // First-time combo hit → show explanation tooltip
       if(G.combo === 2 && !G.seen.combo_intro) showTutorial('combo_intro', true);
       // CHAIN STOMP BONUS — escalates each additional in-air stomp
@@ -2727,6 +2850,31 @@ function collectItem(c){
     G.fuse = Math.min(120, G.fuse + 0.3);
     popup(c.x, c.y-20, '+'+amt, C.coin, 1.0);
     sfx('coin'); spawnBurst(c.x,c.y,C.coin,6);
+    // World challenge progress
+    if(G.challengeType === 'sparks') G.challengeProgress += amt;
+    // COIN CHAIN — consecutive sparks within 2s window grant escalating bonuses
+    G.coinChainCount = (G.coinChainCount||0) + 1;
+    G.coinChainTimer = 2000; // reset window
+    if(G.coinChainCount === 3){
+      G.runCoins += 5;
+      popup(B.x, B.y-70, '⚡ COMBO COIN! +5', '#7eefff', 1.2);
+      sfx('combo');
+    } else if(G.coinChainCount === 5){
+      G.runCoins += 10;
+      popup(B.x, B.y-80, '⚡⚡ CHAIN x5! +10', C.coinHi, 1.3);
+      G.shockwaves.push({x:B.x, y:B.y, r:8, maxR:100, life:1, color:C.coinHi});
+      sfx('combo'); setTimeout(()=>sfx('gem'), 80);
+    } else if(G.coinChainCount === 8){
+      G.runCoins += 15;
+      popup(B.x, B.y-90, '🌈 RAINBOW! +15', '#ffb8e0', 1.5);
+      G.shockwaves.push({x:B.x, y:B.y, r:10, maxR:160, life:1, color:'#ffb8e0'});
+      sfx('gem'); setTimeout(()=>sfx('power'), 80);
+      spawnConfetti(B.x, B.y);
+    } else if(G.coinChainCount > 8 && G.coinChainCount % 3 === 0){
+      // Continuing chain — reward every 3 coins beyond 8
+      G.runCoins += 5;
+      popup(B.x, B.y-100, '🌈 +5', '#ffb8e0', 1.0);
+    }
     // SPARK MILESTONE — every 20 sparks grants +10 fuse bonus
     const nextMile = G.coinMilestone + 20;
     if(G.runCoins >= nextMile){
@@ -2738,6 +2886,7 @@ function collectItem(c){
       sfx('power');
     }
   } else if(c.kind==='gem'){
+    markFirstTime('firstGem');
     const amt = 3*mult;
     G.runGems += amt;
     popup(c.x,c.y-20,'+'+amt+' GEM', C.gem, 1.1);
@@ -2756,6 +2905,7 @@ function collectItem(c){
     G.shield = maxCharges;
     G.shieldMax = maxCharges;
     G.shieldImpact = 0;
+    markFirstTime('firstShield');
     popup(c.x,c.y-20,'SHIELD x'+maxCharges+'!', '#ffffff', 1.3);
     sfx('shieldPick'); spawnBurst(c.x,c.y,'#c0f0ff',20);
   } else if(c.kind==='magnet'){
@@ -3071,15 +3221,68 @@ const ENC = [
     G.collects.push({kind:'coin', x:bx+30, y:fl-90, baseY:fl-90, r:17, t:0});
     G.collects.push({kind:'coin', x:bx+100, y:fl-90, baseY:fl-90, r:17, t:0});
   }},
+  // ===== LUCKY COIN CLOUD (W1-W2) — floating coin cluster high up as mini-challenge =====
+  //  Player must triple jump OR bounce pad to reach; otherwise it passes
+  { minW:1, maxW:2, tier:1, w:300, f: (bx, fl) => {
+    // Cloud sparks in arch pattern very high up (240-300px)
+    const cloudY = fl - 270;
+    for(let i=0; i<15; i++){
+      const ang = (i/14)*Math.PI - Math.PI/2; // arc from left to right
+      const yP = cloudY + Math.cos(ang)*30;
+      const xP = bx + 20 + i*18;
+      G.collects.push({kind:'coin', x:xP, y:yP, baseY:yP, r:17, t:Math.random()*6});
+    }
+    // Bounce pad below to help reach cloud
+    G.obstacles.push({kind:'bouncer', x:bx+120, y:fl-14, w:84, h:14, dmg:0, bouncer:true});
+    // Ground-level sparks as consolation if you miss the cloud
+    G.collects.push({kind:'coin', x:bx+40, y:fl-80, baseY:fl-80, r:17, t:0});
+    G.collects.push({kind:'coin', x:bx+260, y:fl-80, baseY:fl-80, r:17, t:0});
+  }},
+
+  // ===== SPARKLE HIGHWAY (W1 only) — elegant 15-coin arc at mid/end =====
+  { minW:1, maxW:1, tier:2, w:340, f: (bx, fl) => {
+    // Beautiful arc of 15 coins spanning the screen
+    for(let i=0; i<15; i++){
+      const ang = (i/14)*Math.PI; // arc from left to right
+      const yP = fl - 90 - Math.sin(ang)*120;
+      const xP = bx + 20 + i*22;
+      G.collects.push({kind:'coin', x:xP, y:yP, baseY:yP, r:17, t:Math.random()*6});
+    }
+    // Welcome gem at arc peak
+    G.collects.push({kind:'gem', x:bx+170, y:fl-220, baseY:fl-220, r:22, t:0});
+  }},
+
+  // ===== ENEMY VARIANTS — same sprite, varied speed/behavior for fresh feel =====
+  // W1+ slow ember trio (easier stomp practice)
+  { minW:1, maxW:3, w:260, f: (bx, fl) => {
+    for(let i=0; i<3; i++){
+      G.enemies.push({kind:'ember', x:bx+50+i*80, y:fl-48, w:46, h:48, vx:-0.7, dmg:16, stomp:true, reward:3, color:'#7ab8ff', hop:i*0.5});
+    }
+    G.collects.push({kind:'coin', x:bx+30, y:fl-110, baseY:fl-110, r:17, t:0});
+    G.collects.push({kind:'coin', x:bx+220, y:fl-110, baseY:fl-110, r:17, t:0});
+  }},
+  // W2+ fast ember pair (timing challenge, bigger reward)
+  { minW:2, w:240, f: (bx, fl) => {
+    G.enemies.push({kind:'ember', x:bx+60, y:fl-48, w:46, h:48, vx:-1.5, dmg:16, stomp:true, reward:4, color:'#ff8a7a', hop:0});
+    G.enemies.push({kind:'ember', x:bx+180, y:fl-48, w:46, h:48, vx:-1.5, dmg:16, stomp:true, reward:4, color:'#ff8a7a', hop:1.5});
+    G.collects.push({kind:'coin', x:bx+120, y:fl-140, baseY:fl-140, r:17, t:0});
+  }},
+  // W2+ jumpy minibomb (bobbing bigger amplitude, trickier to stomp)
+  { minW:2, w:220, f: (bx, fl) => {
+    G.enemies.push({kind:'minibomb', x:bx+80, y:fl-46, w:46, h:46, vx:-0.9, dmg:18, stomp:true, reward:6, explode:true, color:'#c77dff', hop:0, jumpy:true});
+    G.collects.push({kind:'coin', x:bx+30, y:fl-100, baseY:fl-100, r:17, t:0});
+    G.collects.push({kind:'coin', x:bx+150, y:fl-100, baseY:fl-100, r:17, t:0});
+  }},
+
   // ===== MYSTERY BOX (rare jackpot, W3+) =====
   { minW:3, w:280, f: (bx, fl) => {
     G.obstacles.push({kind:'mystery', x:bx+110, y:fl-150, w:54, h:54, dmg:0, mystery:true});
     for(let i=0;i<3;i++) G.collects.push({kind:'coin', x:bx+30+i*50, y:fl-80, baseY:fl-80, r:17, t:0});
     for(let i=0;i<3;i++) G.collects.push({kind:'coin', x:bx+185+i*30, y:fl-80, baseY:fl-80, r:17, t:0});
   }},
-  // ===== W6+ advanced combos =====
+  // ===== W6+ advanced combos (tier 3 = only in last 40% of each world) =====
   // 20. Zigzag hazards
-  { minW:6, w:380, f: (bx, fl) => {
+  { minW:6, tier:3, w:380, f: (bx, fl) => {
     G.obstacles.push({kind:'coal', x:bx+40, y:fl-32, w:54, h:30, dmg:15});
     G.obstacles.push({kind:'spikes', x:bx+200, y:fl-28, w:82, h:26, dmg:22});
     for(let i=0;i<6;i++){
@@ -3090,7 +3293,7 @@ const ENC = [
     }
   }},
   // 21. Spikes + gem cluster (risky)
-  { minW:6, w:280, f: (bx, fl) => {
+  { minW:6, tier:3, w:280, f: (bx, fl) => {
     G.obstacles.push({kind:'spikes', x:bx+40, y:fl-28, w:82, h:26, dmg:22});
     G.collects.push({kind:'gem', x:bx+40, y:fl-150, baseY:fl-150, r:22, t:0});
     G.collects.push({kind:'gem', x:bx+90, y:fl-150, baseY:fl-150, r:22, t:0});
@@ -3116,8 +3319,19 @@ function spawnWave(){
     spawnPracticeFor(key);
     return;
   }
-  // Filter encounters by current world — supports both minW and maxW (optional ceiling)
-  const pool = ENC.filter(e => (e.minW || 1) <= G.world && (e.maxW === undefined || G.world <= e.maxW));
+  // Filter by world + tier (difficulty progression within a world)
+  //   tier 1 = easy/chill (spawns in first ~30% of world distance)
+  //   tier 2 = medium (spawns middle ~30%)
+  //   tier 3 = harder (spawns last ~40%)
+  //   no tier field = available at all distances
+  const distInWorld = G.distance % CONFIG.WORLD.length;
+  const worldProg = distInWorld / CONFIG.WORLD.length; // 0..1
+  let maxTier = 3; // default show everything
+  if(worldProg < 0.3) maxTier = 1;
+  else if(worldProg < 0.6) maxTier = 2;
+  const pool = ENC.filter(e => (e.minW || 1) <= G.world
+    && (e.maxW === undefined || G.world <= e.maxW)
+    && (e.tier === undefined || e.tier <= maxTier));
   const enc = pool[Math.floor(Math.random()*pool.length)];
   if(enc) enc.f(W + 60, GND);
 }
@@ -8112,6 +8326,34 @@ function drawHUD(){
   ctx.fillStyle = '#fff'; ctx.fillText(Math.floor(G.distance)+'m', 26, 68);
   ctx.font = 'bold 14px Chakra Petch'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
   ctx.fillText('DISTANCE', 26, 88);
+
+  // World challenge panel (bottom-left, appears only when active)
+  if(G.challengeType && !G.challengeDone){
+    const labels = { stomps:'🦵 Stomps', sparks:'✨ Sparks', combo:'⚡ Combo', nearmiss:'💨 Near-miss' };
+    const cpx = 26, cpy = H - 70, cpw = 180, cph = 48;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    roundRect(cpx, cpy, cpw, cph, 10); ctx.fill();
+    ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 1.5;
+    roundRect(cpx, cpy, cpw, cph, 10); ctx.stroke();
+    // Title
+    ctx.fillStyle = '#ffd54a'; ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign = 'left';
+    ctx.fillText('🎯 CHALLENGE', cpx+8, cpy+14);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Chakra Petch';
+    ctx.fillText(labels[G.challengeType]+' '+G.challengeProgress+'/'+G.challengeTarget, cpx+8, cpy+30);
+    // Progress bar
+    const barW = cpw - 16;
+    const pp = Math.min(1, G.challengeProgress / G.challengeTarget);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    roundRect(cpx+8, cpy+36, barW, 4, 2); ctx.fill();
+    ctx.fillStyle = '#ffd54a';
+    roundRect(cpx+8, cpy+36, barW*pp, 4, 2); ctx.fill();
+    // Timer
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = 'bold 9px Chakra Petch';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.ceil(G.challengeTimer/1000)+'s', cpx+cpw-8, cpy+14);
+    ctx.restore();
+  }
 
   const px = W-28, pillW = 110, pillH = 34;
   // coins
