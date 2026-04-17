@@ -2704,28 +2704,96 @@ function drawBomb(bx, by, scale=1, expression='run', animBob=0, eyesLookX=0, eye
   ctx.fillStyle = s.hole;
   ctx.beginPath(); ctx.ellipse(6, -40, 9, 5, 0, 0, Math.PI*2); ctx.fill();
 
-  // fuse + spark
+  // ============================================================================
+  //  FUSE — proportional consumption synced to G.fuse HP bar (0..100)
+  //  The fuse burns from its tip toward the bomb. As G.fuse drops, the
+  //  remaining rope gets shorter and the spark sits at the current burn edge.
+  //  When fuse < 30% the spark intensifies (urgency red-orange + jitter).
+  // ============================================================================
+  const wobble = Math.sin(G.t*0.01)*3;
+  // 3 bezier segments defining the full fuse path (from bomb hole to tip)
+  const fuseSegs = [
+    [{x:6, y:-42},         {x:20, y:-80},       {x:45+wobble,y:-70}, {x:40, y:-55}],
+    [{x:40, y:-55},        {x:35, y:-45},       {x:55, y:-40},       {x:58+wobble,y:-58}],
+    [{x:58+wobble,y:-58},  {x:62, y:-72},       {x:52, y:-82},       {x:65, y:-90}],
+  ];
+  // Fuse ratio — cap at 1.0 (overcharge above 100 stays visually full)
+  // Only apply when drawBomb is called for the player (show actual fuse);
+  // menu/gameover renders get fallback ratio 1.0 via G.fuse default.
+  const fuseMax = 100;
+  const fuseRatio = (typeof G !== 'undefined' && G.state === 'play')
+    ? Math.max(0, Math.min(1, (G.fuse || 0) / fuseMax))
+    : 1;
+  // Position along the 3-segment path (0..3)
+  const pathParam = fuseRatio * 3;
+  const fullSegs = Math.floor(pathParam);
+  const partialT = pathParam - fullSegs;
+  // Urgency colors when fuse is low
+  const urgent = fuseRatio < 0.3;
+  const rurgency = urgent ? 1 + Math.sin(G.t*0.06)*0.3 : 1;
+
   ctx.strokeStyle = s.dark;
   ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(6, -42);
-  const wobble = Math.sin(G.t*0.01)*3;
-  ctx.bezierCurveTo(20, -80, 45+wobble, -70, 40, -55);
-  ctx.bezierCurveTo(35, -45, 55, -40, 58+wobble, -58);
-  ctx.bezierCurveTo(62, -72, 52, -82, 65, -90);
-  ctx.stroke();
+  ctx.moveTo(fuseSegs[0][0].x, fuseSegs[0][0].y);
 
-  const sparkX = 65, sparkY = -90;
-  const sparkSize = 5 + Math.sin(G.t*0.03)*1.5;
+  // Draw complete segments up to fullSegs
+  for(let i = 0; i < Math.min(3, fullSegs); i++){
+    const sg1 = fuseSegs[i];
+    ctx.bezierCurveTo(sg1[1].x, sg1[1].y, sg1[2].x, sg1[2].y, sg1[3].x, sg1[3].y);
+  }
+  // Track the current burning tip (where the spark sits)
+  let sparkX, sparkY;
+  if(fullSegs >= 3){
+    sparkX = fuseSegs[2][3].x; sparkY = fuseSegs[2][3].y;
+  } else if(partialT > 0){
+    // Sample the partial bezier with 20 points and polyline up to localT
+    const sg1 = fuseSegs[fullSegs];
+    for(let j = 1; j <= 20; j++){
+      const t = (j/20) * partialT;
+      const mt = 1 - t;
+      const x = mt*mt*mt*sg1[0].x + 3*mt*mt*t*sg1[1].x + 3*mt*t*t*sg1[2].x + t*t*t*sg1[3].x;
+      const y = mt*mt*mt*sg1[0].y + 3*mt*mt*t*sg1[1].y + 3*mt*t*t*sg1[2].y + t*t*t*sg1[3].y;
+      ctx.lineTo(x, y);
+      sparkX = x; sparkY = y;
+    }
+  } else {
+    // fuseRatio effectively 0 — no rope, spark sits right at the hole
+    sparkX = fuseSegs[0][0].x; sparkY = fuseSegs[0][0].y;
+  }
+  if(fuseRatio > 0){
+    ctx.stroke();
+  }
+  // Inner fuse rope highlight (braided look) — only if some rope remains
+  if(fuseRatio > 0.02){
+    ctx.strokeStyle = urgent ? '#ff6030' : 'rgba(180,120,80,0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke(); // reuse same path with thinner highlight
+  }
+
+  // Spark at current burn tip — with emergency tuning when low
+  const sparkSize = (5 + Math.sin(G.t*0.03)*1.5) * rurgency;
   ctx.save();
-  ctx.translate(sparkX, sparkY);
+  // Tiny jitter when urgent (spark dances)
+  const jx = urgent ? Math.sin(G.t*0.1)*0.8 : 0;
+  const jy = urgent ? Math.cos(G.t*0.12)*0.8 : 0;
+  ctx.translate(sparkX+jx, sparkY+jy);
   ctx.globalCompositeOperation = 'lighter';
-  const sg = ctx.createRadialGradient(0,0,0, 0,0,18);
-  sg.addColorStop(0, 'rgba(255,180,71,0.9)');
-  sg.addColorStop(1, 'rgba(255,120,40,0)');
+  // Urgency glow — bigger, redder when low
+  const glowR = urgent ? 24 : 18;
+  const sg = ctx.createRadialGradient(0,0,0, 0,0, glowR);
+  if(urgent){
+    sg.addColorStop(0, 'rgba(255,80,30,1)');
+    sg.addColorStop(0.5, 'rgba(255,60,20,0.6)');
+    sg.addColorStop(1, 'rgba(255,40,10,0)');
+  } else {
+    sg.addColorStop(0, 'rgba(255,180,71,0.9)');
+    sg.addColorStop(1, 'rgba(255,120,40,0)');
+  }
   ctx.fillStyle = sg;
-  ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle = C.spark;
+  ctx.beginPath(); ctx.arc(0, 0, glowR, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = urgent ? '#ff4020' : C.spark;
   ctx.lineWidth = 2.5; ctx.lineCap = 'round';
   const rays = 8;
   for(let i=0;i<rays;i++){
@@ -2736,8 +2804,11 @@ function drawBomb(bx, by, scale=1, expression='run', animBob=0, eyesLookX=0, eye
     ctx.lineTo(Math.cos(a)*(sparkSize+l), Math.sin(a)*(sparkSize+l));
     ctx.stroke();
   }
-  ctx.fillStyle = C.sparkHot;
-  ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = urgent ? '#ffffff' : C.sparkHot;
+  ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+  // White-hot innermost
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(0, 0, 1.3, 0, Math.PI*2); ctx.fill();
   ctx.restore();
 
   // highlight
