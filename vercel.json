@@ -1,12 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "echo 'static site - no build'",
+  "installCommand": "echo 'static site - no install'",
+  "outputDirectory": "www",
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [
-    { "source": "/", "destination": "/www/index.html" },
-    { "source": "/native.js", "destination": "/www/native.js" },
-    { "source": "/api/:path*", "destination": "/www/api/:path*" }
-  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -18,7 +17,7 @@
       ]
     },
     {
-      "source": "/www/api/(.*\\.js)",
+      "source": "/api/(.*\\.js)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=3600" }
       ]

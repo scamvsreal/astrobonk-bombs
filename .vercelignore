@@ -1,0 +1,14 @@
+android/
+node_modules/
+.gradle/
+*.jks
+*.keystore
+.env
+.env.local
+BUILD-ANDROID.md
+DEPLOYMENT-MAP.md
+PUSH.bat
+schema.sql
+package-lock.json
+package.json
+capacitor.config.json
