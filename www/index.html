@@ -547,21 +547,21 @@ const WORLDS = [
     horizon:'#7eefff', accent:'#a8e9ff', crystal:'#7eefff',
     base:1.5, max:2.6, accel:0.00018, drain:0.028, spawn:[2210,1495], enemyGap:2990,
   },
-  { // 3 — lava (-30% difficulty)
+  { // 3 — lava (smoothed: more breathing room than before)
     name:'Lava Core', emoji:'🔥',
     bg:['#6c0e24','#9c3a1a','#5a1810','#120404'],
     nebulas:['rgba(255,100,30,0.42)','rgba(255,215,55,0.32)','rgba(255,80,80,0.30)','rgba(210,30,60,0.24)'],
     ground:['#b02e10','#5e180c','#1a0606'],
     horizon:'#ff6020', accent:'#ffa030', crystal:'#ff5020',
-    base:1.7, max:2.9, accel:0.00021, drain:0.032, spawn:[2080,1365], enemyGap:2730,
+    base:1.7, max:2.9, accel:0.00021, drain:0.032, spawn:[2250,1600], enemyGap:3000,
   },
-  { // 4 — toxic jungle
+  { // 4 — toxic jungle (was massive jump; now eased — still harder than W3 but less cramped)
     name:'Toxic Bloom', emoji:'☢️',
     bg:['#0e581e','#22823a','#0a4824','#041608'],
     nebulas:['rgba(190,255,50,0.36)','rgba(90,255,140,0.32)','rgba(255,245,70,0.26)','rgba(130,255,70,0.24)'],
     ground:['#3c9420','#1a4a0c','#061808'],
     horizon:'#80ff40', accent:'#c8ff30', crystal:'#60ff40',
-    base:2.7, max:4.5, accel:0.00034, drain:0.052, spawn:[1500,950], enemyGap:1900,
+    base:2.3, max:3.8, accel:0.00028, drain:0.044, spawn:[1900,1300], enemyGap:2400,
   },
   { // 5 — void dimension
     name:'The Void', emoji:'⚫',
@@ -569,7 +569,7 @@ const WORLDS = [
     nebulas:['rgba(255,255,255,0.14)','rgba(210,210,255,0.12)','rgba(170,170,220,0.12)','rgba(255,220,255,0.10)'],
     ground:['#3a3a52','#18182a','#060612'],
     horizon:'#ffffff', accent:'#c0c0e0', crystal:'#e0e0f0',
-    base:3.0, max:4.9, accel:0.00038, drain:0.058, spawn:[1400,850], enemyGap:1750,
+    base:2.7, max:4.3, accel:0.00032, drain:0.050, spawn:[1700,1150], enemyGap:2100,
   },
   { // 6 — solar storm
     name:'Solar Flare', emoji:'☀️',
@@ -577,7 +577,7 @@ const WORLDS = [
     nebulas:['rgba(255,215,55,0.44)','rgba(255,115,30,0.34)','rgba(255,255,95,0.30)','rgba(255,175,55,0.28)'],
     ground:['#b0520e','#4a240c','#140804'],
     horizon:'#ffb020', accent:'#ffe060', crystal:'#ffb040',
-    base:3.3, max:5.3, accel:0.00042, drain:0.064, spawn:[1300,780], enemyGap:1600,
+    base:3.0, max:4.8, accel:0.00036, drain:0.056, spawn:[1550,1000], enemyGap:1900,
   },
   { // 7 — neon nexus (cyber)
     name:'Neon Nexus', emoji:'⚡',
@@ -585,7 +585,7 @@ const WORLDS = [
     nebulas:['rgba(255,40,230,0.42)','rgba(40,230,255,0.38)','rgba(200,40,255,0.30)','rgba(255,255,120,0.24)'],
     ground:['#5a108c','#240642','#0c0218'],
     horizon:'#ff10e0', accent:'#10e0ff', crystal:'#ff20e0',
-    base:3.6, max:5.7, accel:0.00046, drain:0.070, spawn:[1250,720], enemyGap:1500,
+    base:3.3, max:5.2, accel:0.00040, drain:0.062, spawn:[1450,900], enemyGap:1750,
   },
   { // 8 — deep ocean / abyss
     name:'Abyss Tide', emoji:'🌊',
@@ -593,7 +593,7 @@ const WORLDS = [
     nebulas:['rgba(30,220,240,0.42)','rgba(70,130,220,0.32)','rgba(0,255,220,0.30)','rgba(100,200,255,0.26)'],
     ground:['#1a5a78','#0a2640','#020a14'],
     horizon:'#20e0c0', accent:'#60c0ff', crystal:'#20ffc0',
-    base:3.9, max:6.0, accel:0.00050, drain:0.076, spawn:[1200,680], enemyGap:1400,
+    base:3.5, max:5.5, accel:0.00044, drain:0.068, spawn:[1350,830], enemyGap:1600,
   },
   { // 9 — ruby caverns
     name:'Ruby Depths', emoji:'💎',
@@ -601,7 +601,7 @@ const WORLDS = [
     nebulas:['rgba(255,55,100,0.44)','rgba(220,80,145,0.34)','rgba(255,140,55,0.28)','rgba(255,40,140,0.28)'],
     ground:['#820e1e','#301020','#100308'],
     horizon:'#ff2060', accent:'#ff8060', crystal:'#ff1060',
-    base:4.1, max:6.3, accel:0.00054, drain:0.082, spawn:[1150,640], enemyGap:1300,
+    base:3.8, max:5.8, accel:0.00048, drain:0.074, spawn:[1300,780], enemyGap:1500,
   },
   { // 10 — golden apex (endgame)
     name:'Golden Apex', emoji:'👑',
@@ -609,7 +609,7 @@ const WORLDS = [
     nebulas:['rgba(255,230,75,0.48)','rgba(255,190,30,0.38)','rgba(255,135,25,0.34)','rgba(255,245,140,0.30)'],
     ground:['#a87a0e','#402408','#100602'],
     horizon:'#ffd54a', accent:'#fff380', crystal:'#ffd54a',
-    base:4.4, max:6.6, accel:0.00058, drain:0.088, spawn:[1100,600], enemyGap:1200,
+    base:4.0, max:6.0, accel:0.00052, drain:0.080, spawn:[1250,720], enemyGap:1400,
   },
 ];
 function currentWorld(){ return WORLDS[Math.min(9, Math.max(0, (G.world||1)-1))]; }
@@ -694,7 +694,7 @@ const TUTORIALS = {
   coinrush: { title:'✨ SPARK RUSH!', sub:'Sparks raining from above for 5s — grab as many as possible!', icon:'✨', color:'#ffd54a' },
   boss:     { title:'⚠ FIRE WAVE ⚠', sub:'Boss event! Dodge obstacles to keep the wave behind you. Survive 12s for +40 fuse.', icon:'🔥', color:'#ff5733' },
   worldup:  { title:'NEW WORLD!', sub:'Background changes! Difficulty scales up. +40 FUSE bonus!', icon:'🌍', color:'#ffd54a' },
-  groundPound: { title:'GROUND POUND!', sub:'Tap in air after double jump = SLAM! Destroys everything nearby.', icon:'💥', color:'#ffb347' },
+  groundPound: { title:'GROUND POUND!', sub:'SWIPE DOWN (or ↓ key) while airborne to SLAM! Destroys enemies + obstacles nearby. +10 sparks per clear.', icon:'💥', color:'#ffb347' },
 };
 
 const SKINS = {
@@ -905,29 +905,12 @@ function onTap(px,py){
       sfx('djump'); setTimeout(()=>sfx('combo'), 60);
       spawnBurst(B.x, B.y+20, C.water, 10);
       spawnBurst(B.x, B.y+10, C.coinHi, 10);
-      // Dual-color ring (cyan + gold)
       G.shockwaves.push({x:B.x, y:B.y+6, r:8, maxR:70, life:1, color:C.water});
       G.shockwaves.push({x:B.x, y:B.y+6, r:14, maxR:95, life:1, color:C.coinHi});
       popup(B.x, B.y-70, 'TRIPLE!', C.coinHi, 1.25);
     }
-    // GROUND POUND — unlocks at World 3
-    else if(G.world >= UNLOCK.groundPound && !B.pounding && B.y < GND - B.r - 40){
-      B.vy = 22;
-      B.pounding = true;
-      B.squashX = 0.7; B.squashY = 1.4;
-      sfx('djump');
-      spawnBurst(B.x, B.y, C.fireHi, 12);
-      // downward trail burst
-      for(let k=0;k<6;k++){
-        G.particles.push({
-          x: B.x+rand(-10,10), y: B.y,
-          vx: rand(-1,1), vy: rand(-2, 0),
-          life: 1, max: 22,
-          color: k%2 ? C.fireHi : C.fire,
-          size: rand(3,5), g: 0.02, shape:'circle',
-        });
-      }
-    }
+    // NO MORE automatic ground pound on 4th tap — move to swipe-down gesture
+    // (prevents accidental pounds when player just mashes to jump)
     else {
       B.jumpBuffer = 160;
     }
@@ -955,10 +938,31 @@ cv.addEventListener('pointermove', (e)=>{
   const p = canvasCoords(e);
   const dy = p.y - swipeStart.y;
   const dx = Math.abs(p.x - swipeStart.x);
-  // Down swipe (>70px down, less than 80px horizontal drift) triggers smash
-  if(dy > 70 && dx < 90 && G.state==='play' && !B.grounded && G.smash > 0 && !B.pounding){
-    triggerSmash();
-    swipeStart = null;
+  // Down swipe (>70px, <90px drift) triggers:
+  //   - SMASH if player has smash item (priority, bigger AOE)
+  //   - GROUND POUND in W3+ otherwise (free, unlimited)
+  if(dy > 70 && dx < 90 && G.state==='play' && !B.grounded && !B.pounding){
+    if(G.smash > 0){
+      triggerSmash();
+      swipeStart = null;
+    } else if(G.world >= UNLOCK.groundPound && B.y < GND - B.r - 40){
+      // Ground pound via swipe (was: 4th tap — caused accidental pounds)
+      B.vy = 22;
+      B.pounding = true;
+      B.squashX = 0.7; B.squashY = 1.4;
+      sfx('djump');
+      spawnBurst(B.x, B.y, C.fireHi, 12);
+      for(let k=0;k<6;k++){
+        G.particles.push({
+          x: B.x+rand(-10,10), y: B.y,
+          vx: rand(-1,1), vy: rand(-2, 0),
+          life: 1, max: 22,
+          color: k%2 ? C.fireHi : C.fire,
+          size: rand(3,5), g: 0.02, shape:'circle',
+        });
+      }
+      swipeStart = null;
+    }
   }
 });
 cv.addEventListener('pointerup',   (e)=>{ e.preventDefault(); swipeStart = null; onRelease(); });
@@ -967,8 +971,17 @@ window.addEventListener('keydown', (e)=>{
   if(e.code==='Space'||e.code==='ArrowUp'){ e.preventDefault(); onTap(W/2, H-200); }
   else if(e.code==='ArrowDown'||e.code==='KeyS'){
     e.preventDefault();
-    if(G.state==='play' && !B.grounded && G.smash > 0 && !B.pounding){
-      triggerSmash();
+    if(G.state==='play' && !B.grounded && !B.pounding){
+      if(G.smash > 0){
+        triggerSmash();
+      } else if(G.world >= UNLOCK.groundPound && B.y < GND - B.r - 40){
+        // Ground pound via keyboard ↓ (same priority as smash, but no item required)
+        B.vy = 22;
+        B.pounding = true;
+        B.squashX = 0.7; B.squashY = 1.4;
+        sfx('djump');
+        spawnBurst(B.x, B.y, C.fireHi, 12);
+      }
     }
   }
 });
@@ -2731,8 +2744,8 @@ const ENC = [
       G.collects.push({kind:'coin', x:bx+210+i*40, y:yP, baseY:yP, r:17, t:Math.random()*6});
     }
   }},
-  // 6. Shield gift + vertical coin stack
-  { minW:1, w:240, f: (bx, fl) => {
+  // 6. Shield gift + vertical coin stack (only W1-2 as a welcoming gift)
+  { minW:1, maxW:2, w:240, f: (bx, fl) => {
     G.collects.push({kind:'shield', x:bx+110, y:fl-160, baseY:fl-160, r:28, t:0});
     // Staircase of sparks: low → mid → high
     G.collects.push({kind:'coin', x:bx+40, y:fl-90,  baseY:fl-90,  r:17, t:0});
@@ -2930,10 +2943,13 @@ const ENC = [
     G.collects.push({kind:'gem', x:bx+90, y:fl-150, baseY:fl-150, r:22, t:0});
   }},
 
-  // ===== POWER-UP GIFT (filtered by world) =====
-  { minW:1, w:220, f: (bx, fl) => {
+  // ===== POWER-UP GIFT — unlocks from W2 when there's variety in the pool =====
+  // (removed from W1 since only shield+smash were available, felt repetitive)
+  { minW:2, w:220, f: (bx, fl) => {
     const pool = availablePowerups();
-    const k = pool[Math.floor(Math.random()*pool.length)];
+    // Filter out shield if player already has active charges — variety over duplicates
+    const filteredPool = (G.shield > 0 && pool.length > 1) ? pool.filter(k => k !== 'shield') : pool;
+    const k = filteredPool[Math.floor(Math.random()*filteredPool.length)];
     G.collects.push({kind:k, x:bx+110, y:fl-155, baseY:fl-155, r:28, t:0});
     G.collects.push({kind:'coin', x:bx+40, y:fl-90, baseY:fl-90, r:17, t:0});
     G.collects.push({kind:'coin', x:bx+180, y:fl-90, baseY:fl-90, r:17, t:0});
@@ -2947,8 +2963,8 @@ function spawnWave(){
     spawnPracticeFor(key);
     return;
   }
-  // Filter encounters by current world
-  const pool = ENC.filter(e => (e.minW || 1) <= G.world);
+  // Filter encounters by current world — supports both minW and maxW (optional ceiling)
+  const pool = ENC.filter(e => (e.minW || 1) <= G.world && (e.maxW === undefined || G.world <= e.maxW));
   const enc = pool[Math.floor(Math.random()*pool.length)];
   if(enc) enc.f(W + 60, GND);
 }
