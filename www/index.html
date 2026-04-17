@@ -154,6 +154,8 @@ function getShieldHexTile(hexColor){
   return tc;
 }
 let BLOOM_ENABLED = true;
+// Pre-computed filter string (avoids re-parsing CSS per frame on some canvas engines)
+const BLOOM_FILTER = 'blur(12px) brightness(1.35) saturate(1.4)';
 function applyBloom(){
   if(!BLOOM_ENABLED) return;
   try {
@@ -165,7 +167,7 @@ function applyBloom(){
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.globalAlpha = 0.46;
-    ctx.filter = 'blur(12px) brightness(1.35) saturate(1.4)';
+    ctx.filter = BLOOM_FILTER;
     ctx.drawImage(bloomCanvas, 0, 0, W, H);
     ctx.filter = 'none';
     ctx.restore();
@@ -2927,7 +2929,8 @@ function drawEnemy(e){
 
   // TELEGRAPH — proximity-based charge glow (stronger as player approaches)
   // Dangerous (non-stompable) enemies get a red telegraph; stompable get a soft cyan one.
-  if(typeof B !== 'undefined' && B.alive){
+  // Off-screen early-exit: skip distance calc for enemies not yet in telegraph range.
+  if(typeof B !== 'undefined' && B.alive && e.x + e.w > -50 && e.x - B.x < 260){
     const dx = (e.x + e.w/2) - B.x;
     const dy = (e.y + e.h/2) - B.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -5155,16 +5158,14 @@ function drawCollectible(c){
   const palette = getCollectibleColor(c.kind);
   const baseRGB = palette.rgb;
 
-  // 1. Outer pulsing halo — colored to match collectible (−30% intensity)
+  // 1. Outer pulsing halo — 2 concentric circles instead of gradient (no alloc per frame)
   ctx.save();
   ctx.globalCompositeOperation='lighter';
   const haloPulse = 0.7 + Math.sin(G.t*0.006 + c.t)*0.3;
-  const g = ctx.createRadialGradient(0,0,2,0,0,c.r*2);
-  g.addColorStop(0, `rgba(${baseRGB},${0.35*haloPulse})`);   // was 0.5-0.65, −30%
-  g.addColorStop(0.5, `rgba(${baseRGB},${0.18*haloPulse})`);
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(0,0,c.r*2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = `rgba(${baseRGB},${(0.18*haloPulse).toFixed(2)})`;
+  ctx.beginPath(); ctx.arc(0, 0, c.r*2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = `rgba(${baseRGB},${(0.35*haloPulse).toFixed(2)})`;
+  ctx.beginPath(); ctx.arc(0, 0, c.r*1.1, 0, Math.PI*2); ctx.fill();
   ctx.restore();
 
   // 2. Magnetic orbit — 4 tiny particles orbiting (supersparkle=8 rainbow)
@@ -6237,27 +6238,31 @@ function drawWorldParallax(){
   const ox = (G.distance*0.22) % W;  // medium parallax speed
   ctx.save();
 
-  // W1 — COSMIC — distant nebulae planets of various sizes
+  // W1 — COSMIC — distant nebulae planets (concentric circles, no gradient alloc)
   if(wIdx===1){
+    const W1_PLANETS = [
+      {x:W*0.2, y:H*0.48, r:38, c:'#3a1870'},
+      {x:W*0.55, y:H*0.40, r:26, c:'#6a2aa0'},
+      {x:W*0.85, y:H*0.50, r:32, c:'#2a1260'}
+    ];
     for(let i=0; i<=1; i++){
       const xo = i*W - ox;
-      // big planet silhouettes with glow
-      for(const p of [{x:W*0.2, y:H*0.48, r:38, c:'#3a1870'}, {x:W*0.55, y:H*0.40, r:26, c:'#6a2aa0'}, {x:W*0.85, y:H*0.50, r:32, c:'#2a1260'}]){
+      for(let k=0; k<3; k++){
+        const p = W1_PLANETS[k];
         const px = xo + p.x;
+        // Outer glow (2 concentric additive circles)
         ctx.save();
         ctx.globalCompositeOperation='lighter';
-        const gl = ctx.createRadialGradient(px, p.y, p.r*0.5, px, p.y, p.r*1.8);
-        gl.addColorStop(0, 'rgba(255,140,220,0.25)');
-        gl.addColorStop(1, 'rgba(180,80,220,0)');
-        ctx.fillStyle = gl;
+        ctx.fillStyle = 'rgba(180,80,220,0.08)';
         ctx.beginPath(); ctx.arc(px, p.y, p.r*1.8, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,140,220,0.18)';
+        ctx.beginPath(); ctx.arc(px, p.y, p.r*1.2, 0, Math.PI*2); ctx.fill();
         ctx.restore();
-        // planet silhouette
-        const pg = ctx.createRadialGradient(px-p.r*0.3, p.y-p.r*0.3, 2, px, p.y, p.r);
-        pg.addColorStop(0, p.c);
-        pg.addColorStop(1, 'rgba(10,5,20,0.9)');
-        ctx.fillStyle = pg;
+        // Planet silhouette — 2 layers (dark outer ring + colored core)
+        ctx.fillStyle = 'rgba(10,5,20,0.9)';
         ctx.beginPath(); ctx.arc(px, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = p.c;
+        ctx.beginPath(); ctx.arc(px-p.r*0.15, p.y-p.r*0.15, p.r*0.78, 0, Math.PI*2); ctx.fill();
       }
     }
   }
@@ -6597,16 +6602,21 @@ function drawBackground(){
       {x:W*0.50, y:H*0.12, r:160, phase:4},
       {x:W*0.15, y:H*0.50, r:140, phase:6},
     ];
-    positions.forEach((p,i) => {
+    // Nebula blobs — 2 concentric circles per blob instead of createRadialGradient.
+    // The original alpha in cw.nebulas[i] is preserved; inner is full, outer is halved.
+    for(let i=0; i<positions.length; i++){
+      const p = positions[i];
       const gx = p.x + Math.cos(t+p.phase)*22;
       const gy = p.y + Math.sin((t+p.phase)*0.7)*14;
-      const ng = ctx.createRadialGradient(gx, gy, 5, gx, gy, p.r);
-      ng.addColorStop(0, cw.nebulas[i] || cw.nebulas[0]);
-      const base = (cw.nebulas[i] || cw.nebulas[0]).replace(/,[\d.]+\)$/, ',0)');
-      ng.addColorStop(1, base);
-      ctx.fillStyle = ng;
+      const fullCol = cw.nebulas[i] || cw.nebulas[0];
+      // Outer soft layer — alpha halved (using regex once per draw is acceptable, 4 per frame total)
+      const softCol = fullCol.replace(/,([\d.]+)\)$/, (m, a)=> ',' + (parseFloat(a)*0.35).toFixed(2) + ')');
+      ctx.fillStyle = softCol;
       ctx.beginPath(); ctx.arc(gx, gy, p.r, 0, Math.PI*2); ctx.fill();
-    });
+      // Inner core — full intensity
+      ctx.fillStyle = fullCol;
+      ctx.beginPath(); ctx.arc(gx, gy, p.r*0.55, 0, Math.PI*2); ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -7292,7 +7302,18 @@ function drawTutorialModal(){
 
   ctx.restore();
 }
+// Scanline + vignette gradients cached once (used every frame)
+let _scanTopG = null, _scanBotG = null;
+function _initScanGradients(){
+  _scanTopG = ctx.createLinearGradient(0, 0, 0, 90);
+  _scanTopG.addColorStop(0, 'rgba(0,0,0,0.18)');
+  _scanTopG.addColorStop(1, 'rgba(0,0,0,0)');
+  _scanBotG = ctx.createLinearGradient(0, H-110, 0, H);
+  _scanBotG.addColorStop(0, 'rgba(0,0,0,0)');
+  _scanBotG.addColorStop(1, 'rgba(0,0,0,0.16)');
+}
 function drawScanlines(){
+  if(!_scanTopG) _initScanGradients();
   // Subtle CRT scanline overlay — reduced opacity to preserve vibrancy
   ctx.save();
   ctx.globalAlpha = 0.022;
@@ -7301,17 +7322,11 @@ function drawScanlines(){
     ctx.fillRect(0, y, W, 1);
   }
   ctx.restore();
-  // Very subtle vignette on top/bottom — much softer so colors pop
+  // Cached vignette gradients
   ctx.save();
-  const topG = ctx.createLinearGradient(0, 0, 0, 90);
-  topG.addColorStop(0, 'rgba(0,0,0,0.18)');
-  topG.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = topG;
+  ctx.fillStyle = _scanTopG;
   ctx.fillRect(0, 0, W, 90);
-  const botG = ctx.createLinearGradient(0, H-110, 0, H);
-  botG.addColorStop(0, 'rgba(0,0,0,0)');
-  botG.addColorStop(1, 'rgba(0,0,0,0.16)');
-  ctx.fillStyle = botG;
+  ctx.fillStyle = _scanBotG;
   ctx.fillRect(0, H-110, W, 110);
   ctx.restore();
 }
