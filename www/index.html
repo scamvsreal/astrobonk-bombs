@@ -3845,37 +3845,102 @@ function drawEnemy(e){
 function drawObstacle(o){
   const cx = o.x + o.w/2, cy = o.y + o.h/2;
 
-  // -------- CRYSTAL CLUSTER (was 'coal') — glowing space crystals --------
+  // Shared helpers (same quality bar as enemies)
+  const softShadow = (sx, sy, sw, alpha=0.42) => {
+    ctx.save();
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sw);
+    sg.addColorStop(0, `rgba(0,0,0,${alpha})`);
+    sg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.ellipse(sx, sy, sw, sw*0.28, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  };
+  const specular = (x, y, rx, ry, alpha=0.75) => {
+    ctx.save();
+    const g = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    g.addColorStop(0.5, `rgba(255,255,255,${alpha*0.3})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y, rx, ry, -0.5, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  };
+
+  // =======================================================================
+  //  CRYSTAL CLUSTER (was 'coal') — Polished 4-shard cluster with facets
+  //  Layers: ambient halo · stone base with crack detail · 4 crystal shards
+  //          with multi-stop gradient · specular facets · inner energy core
+  // =======================================================================
   if(o.kind==='coal'){
     ctx.save();
-    // glow
+    // 1. Contact shadow beneath base
+    softShadow(cx, o.y+o.h+1, 22, 0.4);
+
+    // 2. Ambient halo (pink energy)
+    ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const gg = ctx.createRadialGradient(cx, cy, 2, cx, cy, 34);
-    gg.addColorStop(0, 'rgba(255,77,184,0.7)');
+    const haloPulse = 0.75 + Math.sin(G.t*0.006)*0.25;
+    const gg = ctx.createRadialGradient(cx, cy, 4, cx, cy, 42);
+    gg.addColorStop(0, `rgba(255,77,184,${0.45*haloPulse})`);
+    gg.addColorStop(0.5, `rgba(255,100,200,${0.22*haloPulse})`);
     gg.addColorStop(1, 'rgba(255,77,184,0)');
     ctx.fillStyle = gg;
-    ctx.beginPath(); ctx.arc(cx, cy, 34, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, 42, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // rock base
-    ctx.fillStyle = '#2a1535';
+
+    // 3. Rock base (3-stop dark gradient with edge highlight)
+    const baseG = ctx.createLinearGradient(o.x, o.y+o.h-6, o.x, o.y+o.h+2);
+    baseG.addColorStop(0, '#4a2a58');
+    baseG.addColorStop(0.6, '#2a1535');
+    baseG.addColorStop(1, '#120820');
+    ctx.fillStyle = baseG;
     roundRect(o.x-2, o.y+o.h-6, o.w+4, 8, 3); ctx.fill();
-    // 4 crystal shards of varying sizes
+    ctx.strokeStyle = '#0a0418'; ctx.lineWidth = 0.8;
+    roundRect(o.x-2, o.y+o.h-6, o.w+4, 8, 3); ctx.stroke();
+    // crack detail on base
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(o.x+2, o.y+o.h-3); ctx.lineTo(o.x+8, o.y+o.h-1); ctx.lineTo(o.x+12, o.y+o.h-4);
+    ctx.stroke();
+
+    // 4. 4 crystal shards with rich multi-stop gradient + facet highlights
     const crystals = [
-      {dx:-14, dy:-4, w:7, h:18, tilt:-0.22},
-      {dx:-3,  dy:-8, w:8, h:22, tilt:0.03},
-      {dx:7,   dy:-6, w:6, h:19, tilt:0.18},
-      {dx:-9,  dy:0,  w:5, h:12, tilt:-0.42},
+      {dx:-14, dy:-4, w:7, h:18, tilt:-0.22, hue:0},    // magenta
+      {dx:-3,  dy:-8, w:8, h:22, tilt:0.03,  hue:0},    // magenta tall
+      {dx:7,   dy:-6, w:6, h:19, tilt:0.18,  hue:1},    // cyan
+      {dx:-9,  dy:0,  w:5, h:12, tilt:-0.42, hue:0},    // magenta small
     ];
     for(const cr of crystals){
       ctx.save();
       ctx.translate(cx+cr.dx, cy+cr.dy);
       ctx.rotate(cr.tilt);
+      // inner energy glow
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const innerG = ctx.createRadialGradient(0, -cr.h*0.3, 0, 0, -cr.h*0.3, cr.w*1.5);
+      const innerCol = cr.hue ? '140,220,255' : '255,180,230';
+      innerG.addColorStop(0, `rgba(${innerCol},0.7)`);
+      innerG.addColorStop(1, `rgba(${innerCol},0)`);
+      ctx.fillStyle = innerG;
+      ctx.beginPath(); ctx.arc(0, -cr.h*0.3, cr.w*1.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      // main body — 5-stop gradient for rich depth
       const cg = ctx.createLinearGradient(0, -cr.h, 0, cr.h/2);
-      cg.addColorStop(0, '#ffc8e8');
-      cg.addColorStop(0.5, '#ff4db8');
-      cg.addColorStop(1, '#5a1a5a');
+      if(cr.hue){
+        cg.addColorStop(0,    '#f0faff');
+        cg.addColorStop(0.2,  '#b8e4ff');
+        cg.addColorStop(0.5,  '#4dd0ff');
+        cg.addColorStop(0.85, '#0088c8');
+        cg.addColorStop(1,    '#042a50');
+      } else {
+        cg.addColorStop(0,    '#ffe0f4');
+        cg.addColorStop(0.2,  '#ffc8e8');
+        cg.addColorStop(0.5,  '#ff4db8');
+        cg.addColorStop(0.85, '#8f2488');
+        cg.addColorStop(1,    '#2a0828');
+      }
       ctx.fillStyle = cg;
-      ctx.strokeStyle = '#2a0828';
+      ctx.strokeStyle = cr.hue ? '#041838' : '#2a0828';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(0, -cr.h);
@@ -3885,144 +3950,382 @@ function drawObstacle(o){
       ctx.lineTo(-cr.w/2, -cr.h*0.25);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
-      // highlight facet
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      // primary facet highlight (glossy edge)
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
       ctx.beginPath();
       ctx.moveTo(0, -cr.h);
-      ctx.lineTo(cr.w*0.25, -cr.h*0.2);
+      ctx.lineTo(cr.w*0.3, -cr.h*0.2);
       ctx.lineTo(-cr.w*0.15, -cr.h*0.05);
       ctx.closePath();
       ctx.fill();
+      // secondary tiny catchlight near tip
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath(); ctx.arc(0, -cr.h*0.85, 0.9, 0, Math.PI*2); ctx.fill();
+      // subtle internal facet line
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -cr.h);
+      ctx.lineTo(0, cr.h/2);
+      ctx.stroke();
       ctx.restore();
     }
+    ctx.restore();
   }
 
-  // -------- PLASMA VENT (was 'firepit') — Piranha Plant pipe analog --------
+  // =======================================================================
+  //  PLASMA VENT (firepit) — Procedural 3-layer flame plume + metal pipe
+  //  Layers: pipe housing with bevel · plasma core (white) · mid (orange) ·
+  //          outer (red) · animated ember spawn · electric arc sparks
+  // =======================================================================
   else if(o.kind==='firepit'){
     ctx.save();
-    // Metal pipe base (Mario warp pipe style, space-tinted)
+    // 1. Contact shadow
+    softShadow(cx, o.y+o.h+1, o.w*0.58, 0.5);
+
+    // 2. Metal pipe base — chromed with multi-stop horizontal gradient
     const pg = ctx.createLinearGradient(o.x, 0, o.x+o.w, 0);
-    pg.addColorStop(0, '#3a4860');
-    pg.addColorStop(0.5, '#8a98b0');
-    pg.addColorStop(1, '#2a3848');
+    pg.addColorStop(0,    '#1a2030');
+    pg.addColorStop(0.15, '#3a4860');
+    pg.addColorStop(0.5,  '#c0d0e0');
+    pg.addColorStop(0.75, '#5a6880');
+    pg.addColorStop(1,    '#1a2030');
     ctx.fillStyle = pg;
     roundRect(o.x-2, o.y+4, o.w+4, o.h-4, 4); ctx.fill();
-    // top rim (pipe opening)
-    ctx.fillStyle = '#2a3548';
+    // inner seam highlight
+    ctx.strokeStyle = 'rgba(200,220,255,0.3)'; ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(o.x, o.y+12); ctx.lineTo(o.x+o.w, o.y+12);
+    ctx.stroke();
+
+    // 3. Top rim (pipe opening) — chromed ring
+    const rimG = ctx.createLinearGradient(o.x, o.y, o.x+o.w, o.y);
+    rimG.addColorStop(0,   '#1a2030');
+    rimG.addColorStop(0.5, '#8a98b0');
+    rimG.addColorStop(1,   '#1a2030');
+    ctx.fillStyle = rimG;
     roundRect(o.x-6, o.y, o.w+12, 10, 4); ctx.fill();
-    ctx.strokeStyle = '#1a2030'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#0a121c'; ctx.lineWidth = 1.4;
     roundRect(o.x-6, o.y, o.w+12, 10, 4); ctx.stroke();
-    // dark opening
-    ctx.fillStyle = '#06080f';
-    roundRect(o.x+2, o.y+2, o.w-4, 6, 2); ctx.fill();
-    // rivets on pipe
-    ctx.fillStyle = '#ffd54a';
-    for(let i=0;i<3;i++){
+    // inner rim shadow (depth)
+    ctx.fillStyle = '#04080f';
+    roundRect(o.x+1, o.y+2, o.w-2, 6, 2); ctx.fill();
+    // rim highlight (top bright edge)
+    ctx.strokeStyle = 'rgba(230,240,255,0.7)'; ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(o.x-4, o.y+1.5); ctx.lineTo(o.x+o.w+4, o.y+1.5);
+    ctx.stroke();
+
+    // 4. Rivets on pipe body (3 across bottom row)
+    for(let i=0; i<3; i++){
       const rx = o.x + 10 + i*((o.w-20)/2);
-      ctx.beginPath(); ctx.arc(rx, o.y+o.h-6, 2, 0, Math.PI*2); ctx.fill();
+      // rivet glow
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const rgG = ctx.createRadialGradient(rx, o.y+o.h-6, 0, rx, o.y+o.h-6, 4);
+      rgG.addColorStop(0, 'rgba(255,210,80,0.7)');
+      rgG.addColorStop(1, 'rgba(255,150,20,0)');
+      ctx.fillStyle = rgG;
+      ctx.beginPath(); ctx.arc(rx, o.y+o.h-6, 4, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      // rivet core
+      const rvG = ctx.createRadialGradient(rx-0.6, o.y+o.h-7, 0, rx, o.y+o.h-6, 2.2);
+      rvG.addColorStop(0, '#fff8d0');
+      rvG.addColorStop(0.6, '#ffd54a');
+      rvG.addColorStop(1, '#7a5010');
+      ctx.fillStyle = rvG;
+      ctx.beginPath(); ctx.arc(rx, o.y+o.h-6, 2.2, 0, Math.PI*2); ctx.fill();
     }
-    // Plasma plume shooting upward
+
+    // 5. Procedural 3-layer flame plume (yellow base → orange mid → red tip)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const plumeH = 34 + Math.sin(G.frame*0.25)*4;
-    const ppg = ctx.createLinearGradient(cx, o.y, cx, o.y-plumeH);
-    ppg.addColorStop(0, 'rgba(0,224,255,0.85)');
-    ppg.addColorStop(0.4, 'rgba(180,100,255,0.7)');
-    ppg.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = ppg;
-    const flick = Math.sin(G.frame*0.35)*2.5;
+    const plumeH = 42 + Math.sin(G.t*0.012)*5;
+    // Layer 1 — outer red/orange wash (widest, softest)
+    const f1 = ctx.createLinearGradient(cx, o.y+2, cx, o.y-plumeH*1.15);
+    f1.addColorStop(0,    'rgba(255,60,20,0.75)');
+    f1.addColorStop(0.4,  'rgba(255,90,30,0.55)');
+    f1.addColorStop(0.8,  'rgba(255,60,40,0.25)');
+    f1.addColorStop(1,    'rgba(200,40,20,0)');
+    ctx.fillStyle = f1;
+    const flk1 = Math.sin(G.t*0.02)*3;
     ctx.beginPath();
-    ctx.moveTo(cx-10, o.y+2);
-    ctx.bezierCurveTo(cx-12+flick, o.y-plumeH*0.4, cx-4, o.y-plumeH*0.8, cx, o.y-plumeH);
-    ctx.bezierCurveTo(cx+4, o.y-plumeH*0.8, cx+12-flick, o.y-plumeH*0.4, cx+10, o.y+2);
+    ctx.moveTo(cx-14, o.y+2);
+    ctx.bezierCurveTo(cx-16+flk1, o.y-plumeH*0.35, cx-8, o.y-plumeH*0.8, cx+flk1*0.4, o.y-plumeH*1.15);
+    ctx.bezierCurveTo(cx+8, o.y-plumeH*0.8, cx+16-flk1, o.y-plumeH*0.35, cx+14, o.y+2);
     ctx.closePath();
     ctx.fill();
-    // electric sparks
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.lineWidth = 1.2;
-    for(let i=0;i<3;i++){
+    // Layer 2 — mid yellow/orange
+    const f2 = ctx.createLinearGradient(cx, o.y+2, cx, o.y-plumeH*0.9);
+    f2.addColorStop(0,   'rgba(255,200,60,0.85)');
+    f2.addColorStop(0.5, 'rgba(255,160,40,0.7)');
+    f2.addColorStop(1,   'rgba(255,120,40,0)');
+    ctx.fillStyle = f2;
+    const flk2 = Math.sin(G.t*0.025 + 1.5)*2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx-9, o.y+1);
+    ctx.bezierCurveTo(cx-11+flk2, o.y-plumeH*0.3, cx-4, o.y-plumeH*0.65, cx+flk2*0.3, o.y-plumeH*0.9);
+    ctx.bezierCurveTo(cx+4, o.y-plumeH*0.65, cx+11-flk2, o.y-plumeH*0.3, cx+9, o.y+1);
+    ctx.closePath();
+    ctx.fill();
+    // Layer 3 — white-hot core
+    const f3 = ctx.createLinearGradient(cx, o.y+1, cx, o.y-plumeH*0.6);
+    f3.addColorStop(0,   'rgba(255,255,255,0.95)');
+    f3.addColorStop(0.5, 'rgba(255,240,180,0.8)');
+    f3.addColorStop(1,   'rgba(255,200,100,0)');
+    ctx.fillStyle = f3;
+    const flk3 = Math.sin(G.t*0.03 + 3)*1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx-4, o.y);
+    ctx.bezierCurveTo(cx-5+flk3, o.y-plumeH*0.25, cx-2, o.y-plumeH*0.45, cx, o.y-plumeH*0.6);
+    ctx.bezierCurveTo(cx+2, o.y-plumeH*0.45, cx+5-flk3, o.y-plumeH*0.25, cx+4, o.y);
+    ctx.closePath();
+    ctx.fill();
+    // Layer 4 — root flame mass (wider base glow)
+    const f4 = ctx.createRadialGradient(cx, o.y+2, 2, cx, o.y+2, 20);
+    f4.addColorStop(0, 'rgba(255,200,100,0.9)');
+    f4.addColorStop(1, 'rgba(255,80,30,0)');
+    ctx.fillStyle = f4;
+    ctx.beginPath(); ctx.arc(cx, o.y+2, 20, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 6. Ember spawn (small upward-floating dots with gravity off)
+    if(G.frame % 4 === 0){
+      G.particles.push({
+        x: cx + rand(-6,6), y: o.y - 2,
+        vx: rand(-0.4, 0.4), vy: rand(-2.2, -1.2),
+        life: 1, max: rand(28, 46),
+        color: Math.random()<0.5 ? 'rgba(255,180,60,0.9)' : 'rgba(255,120,40,0.9)',
+        size: rand(1.4, 2.4), g: -0.02, shape:'circle',
+      });
+    }
+
+    // 7. Electric arc sparks — zigzag lightning above flame
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle = 'rgba(255,255,220,0.9)';
+    ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+    for(let i=0; i<2; i++){
       const ph = G.t*0.06 + i*2.1;
-      const sx = cx + Math.sin(ph)*10;
-      const sy = o.y - 8 - Math.abs(Math.sin(ph*0.7))*18;
+      const sx = cx + Math.sin(ph)*12;
+      const sy = o.y - 10 - Math.abs(Math.sin(ph*0.7))*20;
       ctx.beginPath();
-      ctx.moveTo(sx, sy); ctx.lineTo(sx+3, sy-3); ctx.lineTo(sx+1, sy-6);
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx+4, sy-4);
+      ctx.lineTo(sx+1, sy-8);
+      ctx.lineTo(sx+5, sy-12);
       ctx.stroke();
     }
     ctx.restore();
     ctx.restore();
   }
 
-  // -------- ENERGY TURBINE (was 'saw') — spinning neon propeller --------
+  // =======================================================================
+  //  SAW BLADE (saw) — Metallic circular saw with zigzag teeth + spark trail
+  //  Layers: motion-blur ring · danger aura · chromed disc · zigzag teeth ·
+  //          rivet studs · center hub · glowing core · cut-air spark trail
+  // =======================================================================
   else if(o.kind==='saw'){
     ctx.save();
-    // outer danger glow
+    // 1. Motion blur — subtle streaked ring behind rotating disc
+    ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const ring = ctx.createRadialGradient(cx, cy, o.w*0.2, cx, cy, o.w*0.75);
-    ring.addColorStop(0, 'rgba(77,208,255,0.35)');
-    ring.addColorStop(1, 'rgba(77,208,255,0)');
-    ctx.fillStyle = ring;
-    ctx.beginPath(); ctx.arc(cx, cy, o.w*0.72, 0, Math.PI*2); ctx.fill();
+    const blurG = ctx.createRadialGradient(cx, cy, o.w*0.35, cx, cy, o.w*0.58);
+    blurG.addColorStop(0, 'rgba(200,220,240,0.3)');
+    blurG.addColorStop(1, 'rgba(200,220,240,0)');
+    ctx.fillStyle = blurG;
+    ctx.beginPath(); ctx.arc(cx, cy, o.w*0.58, 0, Math.PI*2); ctx.fill();
     ctx.restore();
 
+    // 2. Danger aura (red-tinted warning glow — it's a cutting tool!)
     ctx.save();
-    ctx.translate(cx,cy); ctx.rotate(o.rotA);
-    const outer = o.w/2;
-    // 3-prong neon blade
-    for(let i=0;i<3;i++){
-      ctx.save();
-      ctx.rotate(i/3 * Math.PI*2);
-      const bg2 = ctx.createLinearGradient(0, 0, 0, -outer);
-      bg2.addColorStop(0, '#ffffff');
-      bg2.addColorStop(0.5, '#7eefff');
-      bg2.addColorStop(1, '#0088c8');
-      ctx.fillStyle = bg2;
-      ctx.strokeStyle = '#00506a'; ctx.lineWidth = 1.5;
+    ctx.globalCompositeOperation='lighter';
+    const auraPulse = 0.7 + Math.sin(G.t*0.012)*0.3;
+    const ring = ctx.createRadialGradient(cx, cy, o.w*0.25, cx, cy, o.w*0.78);
+    ring.addColorStop(0, `rgba(255,90,60,${0.3*auraPulse})`);
+    ring.addColorStop(0.5, `rgba(255,60,40,${0.15*auraPulse})`);
+    ring.addColorStop(1, 'rgba(255,60,40,0)');
+    ctx.fillStyle = ring;
+    ctx.beginPath(); ctx.arc(cx, cy, o.w*0.78, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 3. Spark trail along rotation edge (catch the air being cut)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const rotA = o.rotA || 0;
+    for(let i=0; i<6; i++){
+      const a = rotA * 1.2 + i * Math.PI/3 + Math.sin(G.t*0.05+i)*0.3;
+      const dist = o.w*0.52 + Math.sin(G.t*0.08+i)*2;
+      const sx = cx + Math.cos(a)*dist;
+      const sy = cy + Math.sin(a)*dist;
+      const sgG = ctx.createRadialGradient(sx, sy, 0, sx, sy, 4);
+      sgG.addColorStop(0, 'rgba(255,220,120,0.85)');
+      sgG.addColorStop(1, 'rgba(255,150,40,0)');
+      ctx.fillStyle = sgG;
+      ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI*2); ctx.fill();
+      // white-hot spark core
+      ctx.fillStyle = 'rgba(255,255,200,0.9)';
+      ctx.beginPath(); ctx.arc(sx, sy, 1, 0, Math.PI*2); ctx.fill();
+    }
+    // occasional emitted spark particle
+    if(G.frame % 3 === 0){
+      const spA = rotA*1.2 + Math.random()*Math.PI*2;
+      G.particles.push({
+        x: cx + Math.cos(spA)*o.w*0.52,
+        y: cy + Math.sin(spA)*o.w*0.52,
+        vx: Math.cos(spA)*rand(2,5) + rand(-1,1),
+        vy: Math.sin(spA)*rand(2,5) + rand(-1,1),
+        life: 1, max: rand(15, 25),
+        color: 'rgba(255,220,140,0.95)',
+        size: rand(1, 2), g: 0.08, shape:'circle',
+      });
+    }
+    ctx.restore();
+
+    // Transform for rotation
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotA);
+    const outer = o.w*0.5;
+    const innerR = o.w*0.32;
+
+    // 4. Zigzag teeth (16 triangular teeth around edge)
+    const teethCount = 16;
+    for(let i=0; i<teethCount; i++){
+      const a1 = (i/teethCount)*Math.PI*2;
+      const a2 = ((i+0.5)/teethCount)*Math.PI*2;
+      const a3 = ((i+1)/teethCount)*Math.PI*2;
+      // tooth with gradient (base darker, tip bright)
+      const tg = ctx.createLinearGradient(
+        Math.cos(a1)*innerR, Math.sin(a1)*innerR,
+        Math.cos(a2)*outer, Math.sin(a2)*outer
+      );
+      tg.addColorStop(0, '#3a4858');
+      tg.addColorStop(0.5, '#a0b0c4');
+      tg.addColorStop(0.85, '#ffffff');
+      tg.addColorStop(1, '#c8d4e0');
+      ctx.fillStyle = tg;
       ctx.beginPath();
-      ctx.moveTo(0, -5);
-      ctx.quadraticCurveTo(5, -outer*0.65, 11, -outer*0.92);
-      ctx.quadraticCurveTo(0, -outer, -11, -outer*0.92);
-      ctx.quadraticCurveTo(-5, -outer*0.65, 0, -5);
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      // inner highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.beginPath();
-      ctx.moveTo(0, -8);
-      ctx.quadraticCurveTo(3, -outer*0.55, 3, -outer*0.85);
-      ctx.quadraticCurveTo(-1, -outer*0.5, 0, -8);
+      ctx.moveTo(Math.cos(a1)*innerR, Math.sin(a1)*innerR);
+      ctx.lineTo(Math.cos(a2)*outer, Math.sin(a2)*outer);
+      ctx.lineTo(Math.cos(a3)*innerR, Math.sin(a3)*innerR);
       ctx.closePath();
       ctx.fill();
-      ctx.restore();
+      // tooth outline (dark)
+      ctx.strokeStyle = '#0a1018'; ctx.lineWidth = 0.7;
+      ctx.stroke();
+      // razor-sharp tip highlight
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a2)*outer*0.92, Math.sin(a2)*outer*0.92);
+      ctx.lineTo(Math.cos(a2)*outer, Math.sin(a2)*outer);
+      ctx.stroke();
     }
-    // center hub
-    ctx.fillStyle = '#1a2547';
-    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#4a5a78'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.stroke();
-    // glowing pink core
-    const cg = ctx.createRadialGradient(0, 0, 1, 0, 0, 7);
-    cg.addColorStop(0, '#fff');
-    cg.addColorStop(0.5, '#ff4db8');
-    cg.addColorStop(1, '#8f0c6a');
-    ctx.fillStyle = cg;
-    ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI*2); ctx.fill();
+
+    // 5. Main chromed disc body (radial gradient for dome effect)
+    const diskG = ctx.createRadialGradient(-innerR*0.35, -innerR*0.4, innerR*0.05, 0, 0, innerR);
+    diskG.addColorStop(0,    '#ffffff');
+    diskG.addColorStop(0.2,  '#e0e8f0');
+    diskG.addColorStop(0.5,  '#8a9aae');
+    diskG.addColorStop(0.85, '#3a4858');
+    diskG.addColorStop(1,    '#1a2030');
+    ctx.fillStyle = diskG;
+    ctx.beginPath(); ctx.arc(0, 0, innerR, 0, Math.PI*2); ctx.fill();
+    // disc rim ring (dark separating line)
+    ctx.strokeStyle = '#0a1018'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0, 0, innerR, 0, Math.PI*2); ctx.stroke();
+    // inner bevel ring (glossy)
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(0, 0, innerR*0.88, 0, Math.PI*2); ctx.stroke();
+
+    // 6. Radial spoke pattern (engineered saw look)
+    ctx.save();
+    for(let i=0; i<6; i++){
+      ctx.rotate(Math.PI/3);
+      ctx.strokeStyle = 'rgba(20,30,40,0.4)';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(innerR*0.3, 0);
+      ctx.lineTo(innerR*0.85, 0);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 7. Rivet studs around disc (inner ring)
+    for(let i=0; i<6; i++){
+      const a = (i/6)*Math.PI*2;
+      const rx = Math.cos(a)*innerR*0.65;
+      const ry = Math.sin(a)*innerR*0.65;
+      const rvG = ctx.createRadialGradient(rx-0.5, ry-0.5, 0, rx, ry, 2);
+      rvG.addColorStop(0, '#ffffff');
+      rvG.addColorStop(0.5, '#8a9aae');
+      rvG.addColorStop(1, '#2a3548');
+      ctx.fillStyle = rvG;
+      ctx.beginPath(); ctx.arc(rx, ry, 2, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#0a1018'; ctx.lineWidth = 0.4;
+      ctx.beginPath(); ctx.arc(rx, ry, 2, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // 8. Specular highlight on disc (top-left sheen)
+    specular(-innerR*0.38, -innerR*0.42, innerR*0.26, innerR*0.18, 0.7);
+
+    // 9. Center hub (boss nut)
+    const hubG = ctx.createRadialGradient(-3, -3, 0, 0, 0, 8);
+    hubG.addColorStop(0, '#fff');
+    hubG.addColorStop(0.5, '#a0b0c4');
+    hubG.addColorStop(1, '#1a2030');
+    ctx.fillStyle = hubG;
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#0a1018'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.stroke();
+    // center hex bolt
+    ctx.fillStyle = '#3a4858';
+    ctx.beginPath();
+    for(let k=0; k<6; k++){
+      const a = (k/6)*Math.PI*2;
+      const px = Math.cos(a)*4.5, py = Math.sin(a)*4.5;
+      if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#0a1018'; ctx.lineWidth = 0.5;
+    ctx.stroke();
+    // glowing red core at center (warning)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const crPulse = 0.7 + Math.sin(G.t*0.02)*0.3;
+    const crG = ctx.createRadialGradient(0, 0, 0, 0, 0, 3);
+    crG.addColorStop(0, `rgba(255,100,80,${crPulse})`);
+    crG.addColorStop(1, 'rgba(255,60,40,0)');
+    ctx.fillStyle = crG;
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.restore();
     ctx.restore();
   }
 
-  // -------- SPACE CACTUS (was 'chili') — green cactus with yellow thorns + pink flower --------
+  // =======================================================================
+  //  SPACE CACTUS-CHILI (chili) — Fleshy green stem with thorns + fire flower
+  //  Layers: shadow · ribbed stem with gradient · rib shadows · thorns
+  //          specular · flaming pepper flower on top with heat glow + embers
+  // =======================================================================
   else if(o.kind==='chili'){
     ctx.save();
     ctx.translate(cx, o.y+o.h);
-    // drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath(); ctx.ellipse(0, -2, 14, 4, 0, 0, Math.PI*2); ctx.fill();
-    // Main stem (green gradient)
-    const sg = ctx.createLinearGradient(0, -o.h, 0, 0);
-    sg.addColorStop(0, '#8ef090');
-    sg.addColorStop(0.4, '#4ac060');
-    sg.addColorStop(1, '#1a5028');
+
+    // 1. Contact shadow
+    softShadow(0, 0, 16, 0.45);
+
+    // 2. Stem main body (5-stop gradient with subtle inner highlight)
+    const sg = ctx.createLinearGradient(-12, 0, 12, 0);
+    sg.addColorStop(0,    '#0a3018');
+    sg.addColorStop(0.25, '#2e8040');
+    sg.addColorStop(0.5,  '#68d478');
+    sg.addColorStop(0.75, '#2e8040');
+    sg.addColorStop(1,    '#0a3018');
     ctx.fillStyle = sg;
-    ctx.strokeStyle = '#0a3018';
+    ctx.strokeStyle = '#041608';
     ctx.lineWidth = 1.3;
     ctx.beginPath();
     ctx.moveTo(-12, 0);
@@ -4031,234 +4334,593 @@ function drawObstacle(o){
     ctx.bezierCurveTo(10, -o.h*0.7, 16, -o.h*0.35, 12, 0);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
-    // Cactus ribs (vertical dark lines)
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1.5; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-7, -4); ctx.lineTo(-8, -o.h+8); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, -3); ctx.lineTo(0, -o.h+6); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(7, -4); ctx.lineTo(8, -o.h+8); ctx.stroke();
-    // Bright highlight stripe (shine)
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+
+    // 3. Top-front specular shine (vertical wet highlight)
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    const shineG = ctx.createLinearGradient(-5, -o.h, -5, 0);
+    shineG.addColorStop(0, 'rgba(255,255,255,0.9)');
+    shineG.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = shineG;
     ctx.beginPath();
-    ctx.ellipse(-4, -o.h*0.55, 2, o.h*0.35, -0.08, 0, Math.PI*2);
+    ctx.ellipse(-4, -o.h*0.55, 2, o.h*0.42, -0.08, 0, Math.PI*2);
     ctx.fill();
-    // Yellow thorns on sides (3 per side, alternating)
-    ctx.fillStyle = '#ffe060';
-    ctx.strokeStyle = '#8a6a10';
+    ctx.restore();
+
+    // 4. Ribs (3 vertical darker grooves)
+    ctx.save();
+    ctx.globalCompositeOperation='multiply';
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    for(const rx of [-7, 0, 7]){
+      ctx.beginPath();
+      ctx.moveTo(rx + (rx === 0 ? 0 : -0.5), -4);
+      ctx.lineTo(rx + (rx === 0 ? 0 : 0.5), -o.h+8);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // inner rib highlights (micro shine beside each rib)
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.lineWidth = 0.8;
+    for(const rx of [-5, 2, 9]){
+      ctx.beginPath();
+      ctx.moveTo(rx, -8); ctx.lineTo(rx, -o.h+10);
+      ctx.stroke();
+    }
+
+    // 5. Yellow thorns (4 per side with beveled gradient + glow)
     for(let i=0; i<4; i++){
       const sy = -o.h*0.2 - i*(o.h*0.17);
-      // left
-      ctx.beginPath();
-      ctx.moveTo(-11, sy);
-      ctx.lineTo(-18, sy-2);
-      ctx.lineTo(-11, sy-5);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      // right
-      ctx.beginPath();
-      ctx.moveTo(11, sy-3);
-      ctx.lineTo(18, sy-1);
-      ctx.lineTo(11, sy+2);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
+      for(const side of [-1, 1]){
+        ctx.save();
+        // thorn glow
+        ctx.save();
+        ctx.globalCompositeOperation='lighter';
+        const glow = ctx.createRadialGradient(side*14, sy-2, 0, side*14, sy-2, 6);
+        glow.addColorStop(0, 'rgba(255,220,80,0.5)');
+        glow.addColorStop(1, 'rgba(255,180,40,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(side*14, sy-2, 6, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+        // thorn shape with multi-stop gradient
+        const thG = ctx.createLinearGradient(side*11, sy, side*18, sy);
+        thG.addColorStop(0, '#c08a10');
+        thG.addColorStop(0.5, '#ffe070');
+        thG.addColorStop(1, '#fff8d0');
+        ctx.fillStyle = thG;
+        ctx.strokeStyle = '#5a3a05';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath();
+        ctx.moveTo(side*11, sy);
+        ctx.lineTo(side*18, sy-2);
+        ctx.lineTo(side*11, sy-5);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
     }
-    // Tiny thorns on front (dots)
-    ctx.fillStyle = '#ffe060';
-    for(let i=0;i<5;i++){
+    // Tiny front-facing thorns (dots) — 2 columns
+    ctx.fillStyle = '#ffe070';
+    ctx.strokeStyle = '#8a6010'; ctx.lineWidth = 0.3;
+    for(let i=0; i<5; i++){
       const ty = -o.h*0.15 - i*(o.h*0.15);
-      ctx.beginPath(); ctx.arc(-3, ty, 0.8, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(3, ty-3, 0.8, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-3, ty, 0.9, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(3, ty-3, 0.9, 0, Math.PI*2); ctx.fill(); ctx.stroke();
     }
-    // Pink cactus flower on top (with glow — space touch)
+
+    // 6. Flaming chili-pepper flower on top (replacing static pink flower)
+    // Flower base (red pepper body with gradient)
+    const pepG = ctx.createRadialGradient(-1, -o.h-6, 1, 0, -o.h-4, 8);
+    pepG.addColorStop(0,    '#ffc080');
+    pepG.addColorStop(0.35, '#ff6030');
+    pepG.addColorStop(0.75, '#c82820');
+    pepG.addColorStop(1,    '#5a0a08');
+    ctx.fillStyle = pepG;
+    ctx.strokeStyle = '#300404'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.ellipse(0, -o.h-4, 7, 5, 0, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // pepper specular
+    ctx.fillStyle = 'rgba(255,240,200,0.7)';
+    ctx.beginPath(); ctx.ellipse(-2, -o.h-6, 1.5, 1.2, -0.5, 0, Math.PI*2); ctx.fill();
+    // green stem top
+    ctx.fillStyle = '#4a9020';
+    ctx.beginPath();
+    ctx.moveTo(-3, -o.h-7); ctx.lineTo(0, -o.h-11); ctx.lineTo(3, -o.h-7);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#1a4008'; ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // 7. Heat distortion / flame tip above pepper
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const fg = ctx.createRadialGradient(0, -o.h-4, 2, 0, -o.h-4, 18);
-    fg.addColorStop(0, 'rgba(255,120,200,0.85)');
-    fg.addColorStop(1, 'rgba(255,120,200,0)');
-    ctx.fillStyle = fg;
-    ctx.beginPath(); ctx.arc(0, -o.h-4, 18, 0, Math.PI*2); ctx.fill();
+    const heatH = 14 + Math.sin(G.t*0.02)*3;
+    // outer red
+    const hgA = ctx.createLinearGradient(0, -o.h-4, 0, -o.h-4-heatH);
+    hgA.addColorStop(0, 'rgba(255,80,20,0.7)');
+    hgA.addColorStop(1, 'rgba(255,40,0,0)');
+    ctx.fillStyle = hgA;
+    const flk = Math.sin(G.t*0.03)*2;
+    ctx.beginPath();
+    ctx.moveTo(-5, -o.h-4);
+    ctx.bezierCurveTo(-6+flk, -o.h-4-heatH*0.4, -2, -o.h-4-heatH*0.75, 0, -o.h-4-heatH);
+    ctx.bezierCurveTo(2, -o.h-4-heatH*0.75, 6-flk, -o.h-4-heatH*0.4, 5, -o.h-4);
+    ctx.closePath(); ctx.fill();
+    // inner yellow core
+    const hgB = ctx.createLinearGradient(0, -o.h-4, 0, -o.h-4-heatH*0.7);
+    hgB.addColorStop(0, 'rgba(255,220,100,0.9)');
+    hgB.addColorStop(1, 'rgba(255,180,40,0)');
+    ctx.fillStyle = hgB;
+    ctx.beginPath();
+    ctx.moveTo(-2, -o.h-4);
+    ctx.bezierCurveTo(-3, -o.h-4-heatH*0.3, -1, -o.h-4-heatH*0.55, 0, -o.h-4-heatH*0.7);
+    ctx.bezierCurveTo(1, -o.h-4-heatH*0.55, 3, -o.h-4-heatH*0.3, 2, -o.h-4);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
-    // Flower petals (5)
-    ctx.fillStyle = '#ff5ea0';
-    ctx.strokeStyle = '#a01a5a';
-    ctx.lineWidth = 0.7;
-    const petals = 5;
-    const rot = G.t*0.0015;
-    for(let i=0; i<petals; i++){
-      const a = (i/petals)*Math.PI*2 - Math.PI/2 + rot;
-      const px2 = Math.cos(a)*4, py2 = -o.h-5 + Math.sin(a)*3;
-      ctx.save();
-      ctx.translate(px2, py2);
-      ctx.rotate(a);
-      ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 5, 0, 0, Math.PI*2);
-      ctx.fill(); ctx.stroke();
-      ctx.restore();
+
+    // 8. Small ember sparks occasionally
+    if(G.frame % 10 === 0){
+      G.particles.push({
+        x: cx + rand(-2,2), y: o.y - 6 + rand(-2,0),
+        vx: rand(-0.4, 0.4), vy: rand(-1.8, -0.8),
+        life: 1, max: rand(20, 34),
+        color: 'rgba(255,150,50,0.9)',
+        size: rand(1, 2), g: -0.01, shape:'circle',
+      });
     }
-    // Flower center (yellow)
-    ctx.fillStyle = '#ffd54a';
-    ctx.beginPath(); ctx.arc(0, -o.h-5, 2.8, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#8a6010';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
+
     ctx.restore();
   }
 
-  // -------- MYSTERY BOX — rainbow-glowing loot box --------
+  // =======================================================================
+  //  MYSTERY BOX — Holographic rotating 3D loot box with cycling icons
+  //  Layers: rainbow halo · holographic shell with scanlines · bevel frame ·
+  //          3D tumbling icon inside · catchlight · corner sparkles
+  // =======================================================================
   else if(o.kind==='mystery'){
     const mcx = o.x + o.w/2, mcy = o.y + o.h/2;
     const bob = Math.sin(G.t*0.008) * 3;
     ctx.save();
     ctx.translate(mcx, mcy+bob);
-    // Rainbow halo (color-cycling)
+
+    // 1. Rainbow holo halo (color-cycling, bigger+softer)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
     const hue = Math.floor(G.t*0.15) % 360;
-    const rg = ctx.createRadialGradient(0,0,4, 0,0,45);
-    rg.addColorStop(0, `hsla(${hue},95%,70%,0.7)`);
+    const haloPulse = 0.75 + Math.sin(G.t*0.008)*0.25;
+    const rg = ctx.createRadialGradient(0,0,4, 0,0,52);
+    rg.addColorStop(0, `hsla(${hue},95%,70%,${0.55*haloPulse})`);
+    rg.addColorStop(0.5, `hsla(${(hue+60)%360},95%,75%,${0.3*haloPulse})`);
     rg.addColorStop(1, `hsla(${hue},95%,70%,0)`);
     ctx.fillStyle = rg;
-    ctx.beginPath(); ctx.arc(0, 0, 45, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 52, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // Subtle rotation
-    const rot = Math.sin(G.t*0.003)*0.1;
+
+    // 2. Contact shadow (on floor far below)
+    softShadow(0, o.h/2+10, 20, 0.35);
+
+    // Tumble: pitch (Y axis, shows front vs side), always positive yaw drift
+    const rot = Math.sin(G.t*0.003)*0.08;
+    const yaw = G.t * 0.004;  // horizontal tumble rate
+    const yawCos = Math.cos(yaw);
+    const yawAbs = Math.abs(yawCos);
     ctx.rotate(rot);
-    // Box body (gold gradient)
-    const bg = ctx.createLinearGradient(0,-o.h/2,0,o.h/2);
-    bg.addColorStop(0, '#fff3a0');
-    bg.addColorStop(0.5, '#ffd54a');
-    bg.addColorStop(1, '#a07010');
-    ctx.fillStyle = bg;
-    ctx.strokeStyle = '#5a3a00';
+
+    // 3. Holographic shell (square box with hologram edge shimmer + scanlines)
+    const boxW = o.w * yawAbs + 4;  // compressed when edge-on
+    const boxH = o.h;
+    // outer frame glow (animated hue edge)
+    ctx.save();
+    ctx.shadowColor = `hsl(${hue},95%,70%)`;
+    ctx.shadowBlur = 14;
+    // metallic frame
+    const frameG = ctx.createLinearGradient(0, -boxH/2, 0, boxH/2);
+    frameG.addColorStop(0,    '#fff3a0');
+    frameG.addColorStop(0.35, '#ffd54a');
+    frameG.addColorStop(0.7,  '#c88810');
+    frameG.addColorStop(1,    '#5a3a00');
+    ctx.fillStyle = frameG;
+    ctx.strokeStyle = '#2a1a00';
     ctx.lineWidth = 2;
-    roundRect(-o.w/2, -o.h/2, o.w, o.h, 6);
+    roundRect(-boxW/2, -boxH/2, boxW, boxH, 6);
     ctx.fill(); ctx.stroke();
-    // Ribbon vertical (magenta)
-    ctx.fillStyle = C.fuseHole;
-    ctx.fillRect(-5, -o.h/2, 10, o.h);
-    ctx.strokeStyle = '#8f0c6a';
-    ctx.lineWidth = 0.8;
-    ctx.strokeRect(-5, -o.h/2, 10, o.h);
-    // Ribbon horizontal
-    ctx.fillStyle = C.fuseHole;
-    ctx.fillRect(-o.w/2, -5, o.w, 10);
-    ctx.strokeRect(-o.w/2, -5, o.w, 10);
-    // Bow (circle) in center
-    const bowG = ctx.createRadialGradient(-2,-2,1,0,0,8);
-    bowG.addColorStop(0, '#ff9ed0');
-    bowG.addColorStop(1, '#c71585');
-    ctx.fillStyle = bowG;
-    ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#8f0c6a'; ctx.lineWidth = 1.2;
-    ctx.stroke();
-    // Question mark animating
-    const qPulse = 0.8 + Math.sin(G.t*0.02)*0.2;
-    ctx.fillStyle = `rgba(255,255,255,${qPulse})`;
-    ctx.font = 'bold 14px Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('?', 0, 1);
-    // Small corner sparkles
-    for(let i=0;i<4;i++){
-      const sa = (i/4)*Math.PI*2 + G.t*0.005;
-      const sx = Math.cos(sa) * (o.w*0.55);
-      const sy = Math.sin(sa) * (o.h*0.55);
-      ctx.fillStyle = `hsl(${(hue+i*90)%360},100%,80%)`;
-      ctx.beginPath(); ctx.arc(sx, sy, 2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // 4. Inner holographic window (shows transparent inside with scanlines)
+    ctx.save();
+    roundRect(-boxW/2+4, -boxH/2+4, boxW-8, boxH-8, 3);
+    ctx.clip();
+    // hologram base fill (gradient sky behind icons)
+    const holoG = ctx.createLinearGradient(0, -boxH/2, 0, boxH/2);
+    holoG.addColorStop(0, `hsla(${hue},90%,60%,0.3)`);
+    holoG.addColorStop(1, `hsla(${(hue+120)%360},90%,40%,0.35)`);
+    ctx.fillStyle = holoG;
+    ctx.fillRect(-boxW/2, -boxH/2, boxW, boxH);
+    // scanlines (moving)
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = '#ffffff';
+    const scanOff = (G.t * 0.15) % 4;
+    for(let sy = -boxH/2 + scanOff; sy < boxH/2; sy += 4){
+      ctx.fillRect(-boxW/2, sy, boxW, 0.7);
+    }
+    ctx.globalAlpha = 1;
+    // 3D tumbling icon inside (cycles through gift types)
+    const iconTypes = ['coin', 'gem', 'shield', 'spark'];
+    const iconIdx = Math.floor(G.t*0.001) % iconTypes.length;
+    const iconType = iconTypes[iconIdx];
+    const iconFade = (Math.sin(G.t*0.001*Math.PI*2 - iconIdx*2) + 1) * 0.5;
+    ctx.save();
+    ctx.scale(yawAbs, 1);
+    ctx.globalAlpha = 0.85 + iconFade*0.15;
+    // outer icon glow
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const iconGlowColor = iconType==='coin' ? 'rgba(255,213,74,' : iconType==='gem' ? 'rgba(255,77,184,' : iconType==='shield' ? 'rgba(80,200,255,' : 'rgba(255,180,60,';
+    const igG = ctx.createRadialGradient(0, 0, 0, 0, 0, 18);
+    igG.addColorStop(0, iconGlowColor + '0.7)');
+    igG.addColorStop(1, iconGlowColor + '0)');
+    ctx.fillStyle = igG;
+    ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    // icon core
+    if(iconType==='coin'){
+      const cG = ctx.createRadialGradient(-3, -4, 1, 0, 0, 10);
+      cG.addColorStop(0, '#fff4b0');
+      cG.addColorStop(0.5, '#ffd54a');
+      cG.addColorStop(1, '#7a5008');
+      ctx.fillStyle = cG;
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#3a2000'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.stroke();
+      // star inside
+      ctx.fillStyle = '#8a5a10';
+      ctx.beginPath();
+      for(let k=0;k<10;k++){
+        const a = (k/10)*Math.PI*2 - Math.PI/2;
+        const rr = k%2===0 ? 5 : 2.5;
+        const px = Math.cos(a)*rr, py = Math.sin(a)*rr;
+        if(k===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.closePath(); ctx.fill();
+    } else if(iconType==='gem'){
+      ctx.fillStyle = '#6a1a50';
+      ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(10,0); ctx.lineTo(0,10); ctx.lineTo(-10,0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ff4db8';
+      ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(10,0); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffbddc';
+      ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(-10,0); ctx.lineTo(0,0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(0,-10); ctx.lineTo(4,-3); ctx.lineTo(-4,-3); ctx.closePath(); ctx.fill();
+    } else if(iconType==='shield'){
+      const shG = ctx.createRadialGradient(-3, -3, 0, 0, 0, 10);
+      shG.addColorStop(0, '#e0f4ff');
+      shG.addColorStop(0.6, '#4dd0ff');
+      shG.addColorStop(1, '#1a4868');
+      ctx.fillStyle = shG;
+      ctx.beginPath();
+      ctx.moveTo(0, -10); ctx.lineTo(8, -4); ctx.lineTo(8, 5); ctx.lineTo(0, 10); ctx.lineTo(-8, 5); ctx.lineTo(-8, -4);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#0a3048'; ctx.lineWidth = 1;
+      ctx.stroke();
+      // inner star
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+    } else {
+      // spark
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.strokeStyle = '#ffd080'; ctx.lineWidth = 2; ctx.lineCap='round';
+      for(let k=0; k<8; k++){
+        const a = (k/8)*Math.PI*2 + G.t*0.01;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a)*2, Math.sin(a)*2);
+        ctx.lineTo(Math.cos(a)*9, Math.sin(a)*9);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
+    ctx.restore();
+
+    // 5. Frame bevel highlight (top edge bright)
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(-boxW/2+3, -boxH/2+2);
+    ctx.lineTo(boxW/2-3, -boxH/2+2);
+    ctx.stroke();
+
+    // 6. Corner pulsing rainbow gems
+    for(let i=0; i<4; i++){
+      const a = (i/4)*Math.PI*2 + G.t*0.003;
+      const gemX = (i<2?-1:1) * (boxW/2 - 5);
+      const gemY = (i%2===0?-1:1) * (boxH/2 - 5);
+      const gPulse = 0.7 + Math.sin(G.t*0.01 + i)*0.3;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const gmG = ctx.createRadialGradient(gemX, gemY, 0, gemX, gemY, 5);
+      gmG.addColorStop(0, `hsla(${(hue+i*90)%360},100%,80%,${gPulse})`);
+      gmG.addColorStop(1, `hsla(${(hue+i*90)%360},100%,60%,0)`);
+      ctx.fillStyle = gmG;
+      ctx.beginPath(); ctx.arc(gemX, gemY, 5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = `hsl(${(hue+i*90)%360},100%,85%)`;
+      ctx.beginPath(); ctx.arc(gemX, gemY, 1.6, 0, Math.PI*2); ctx.fill();
+    }
+
+    // 7. Floating "?" above the box when mostly face-on
+    if(yawAbs > 0.4){
+      const qY = -o.h/2 - 16 + Math.sin(G.t*0.015)*2;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle = `hsla(${hue},95%,85%,${yawAbs})`;
+      ctx.font = '900 16px Russo One, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('?', 0, qY);
+      ctx.restore();
+      ctx.fillStyle = `rgba(255,255,255,${yawAbs})`;
+      ctx.fillText('?', 0, qY);
+    }
+
+    ctx.restore();
   }
-  // -------- BOUNCE PAD — pink trampoline that launches bomb high --------
+
+  // =======================================================================
+  //  BOUNCE PAD (bouncer) — Chromed trampoline with coil springs + launch glow
+  //  Layers: shadow · metal base with rivets · coil springs ·
+  //          cushion with 2-tone gradient · specular · pulsing launch halo · up arrows
+  // =======================================================================
   else if(o.kind==='bouncer'){
     ctx.save();
     const cx2 = o.x + o.w/2;
-    // Bottom base (metal)
-    ctx.fillStyle = '#2a1535';
-    roundRect(o.x, o.y+8, o.w, o.h-4, 4); ctx.fill();
-    ctx.strokeStyle = '#0f0620'; ctx.lineWidth = 1;
-    roundRect(o.x, o.y+8, o.w, o.h-4, 4); ctx.stroke();
-    // Spring coils (zigzag visual)
-    ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 2;
-    ctx.beginPath();
-    for(let k=0;k<3;k++){
-      const sx = o.x + 10 + k*((o.w-20)/2);
-      ctx.moveTo(sx, o.y+8);
-      ctx.lineTo(sx-3, o.y+11);
-      ctx.lineTo(sx+3, o.y+12);
-    }
-    ctx.stroke();
-    // Top cushion (bright pink with highlight)
-    const cg = ctx.createLinearGradient(0, o.y, 0, o.y+8);
-    cg.addColorStop(0, '#ffc0e0');
-    cg.addColorStop(0.5, C.fuseHole);
-    cg.addColorStop(1, '#9a3080');
-    ctx.fillStyle = cg;
-    roundRect(o.x+3, o.y, o.w-6, 9, 3); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.6;
-    roundRect(o.x+5, o.y+1, o.w-10, 2, 1); ctx.fill();
-    ctx.globalAlpha = 1;
-    // Pulsing glow from top
+
+    // 1. Contact shadow
+    softShadow(cx2, o.y+o.h+2, o.w*0.45, 0.4);
+
+    // 2. Launch halo (pulsing pink aura above pad)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const pulse = 0.6 + Math.sin(G.t*0.012)*0.4;
-    const gg = ctx.createRadialGradient(cx2, o.y-4, 4, cx2, o.y-4, 40);
-    gg.addColorStop(0, `rgba(255,77,184,${0.7*pulse})`);
+    const bpPulse = 0.7 + Math.sin(G.t*0.012)*0.3;
+    const gg = ctx.createRadialGradient(cx2, o.y-8, 2, cx2, o.y-8, 48);
+    gg.addColorStop(0, `rgba(255,77,184,${0.6*bpPulse})`);
+    gg.addColorStop(0.5, `rgba(255,120,220,${0.25*bpPulse})`);
     gg.addColorStop(1, 'rgba(255,77,184,0)');
     ctx.fillStyle = gg;
-    ctx.beginPath(); ctx.arc(cx2, o.y-4, 40, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx2, o.y-8, 48, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    // Up arrows floating above
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px Arial'; ctx.textAlign='center';
-    const ay = o.y - 18 + Math.sin(G.t*0.008)*4;
-    ctx.globalAlpha = 0.75;
-    ctx.fillText('↑', cx2-10, ay);
-    ctx.fillText('↑', cx2+10, ay-4);
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-  // -------- METEOR SHARDS (was 'spikes') — sharp purple rock shards --------
-  else if(o.kind==='spikes'){
-    ctx.save();
-    // base rock
-    ctx.fillStyle = '#1a0828';
-    roundRect(o.x-4, o.y+o.h-5, o.w+8, 8, 3); ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    roundRect(o.x-4, o.y+o.h-5, o.w+8, 8, 3); ctx.stroke();
-    // 5 shards
-    const n = 5;
-    for(let i=0; i<n; i++){
-      const x = o.x + (i+0.5)*(o.w/n);
-      const h = o.h + (i%2 ? -2 : 3);
-      const g = ctx.createLinearGradient(x, o.y-2, x, o.y+h);
-      g.addColorStop(0, '#e0a8ff');
-      g.addColorStop(0.5, '#8040c0');
-      g.addColorStop(1, '#2a1040');
-      ctx.fillStyle = g;
-      ctx.strokeStyle = '#0a0218';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(x-7, o.y+h);
-      ctx.lineTo(x-1, o.y);
-      ctx.lineTo(x+7, o.y+h);
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      // highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.beginPath();
-      ctx.moveTo(x-2, o.y+2);
-      ctx.lineTo(x+1, o.y+h*0.4);
-      ctx.lineTo(x-3, o.y+h*0.5);
-      ctx.closePath();
-      ctx.fill();
+
+    // 3. Base mount (chromed metal with 5-stop gradient)
+    const bG = ctx.createLinearGradient(o.x, o.y+8, o.x+o.w, o.y+8);
+    bG.addColorStop(0,    '#0a0410');
+    bG.addColorStop(0.15, '#3a1b4a');
+    bG.addColorStop(0.5,  '#8a5aa0');
+    bG.addColorStop(0.85, '#3a1b4a');
+    bG.addColorStop(1,    '#0a0410');
+    ctx.fillStyle = bG;
+    roundRect(o.x, o.y+8, o.w, o.h-4, 4); ctx.fill();
+    ctx.strokeStyle = '#0a0418'; ctx.lineWidth = 1;
+    roundRect(o.x, o.y+8, o.w, o.h-4, 4); ctx.stroke();
+    // bottom bevel
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(o.x+2, o.y+9); ctx.lineTo(o.x+o.w-2, o.y+9);
+    ctx.stroke();
+    // corner rivets on base
+    for(const rx of [o.x+4, o.x+o.w-4]){
+      const rvG = ctx.createRadialGradient(rx-0.5, o.y+11, 0, rx, o.y+11, 1.8);
+      rvG.addColorStop(0, '#fff');
+      rvG.addColorStop(0.5, '#ffd54a');
+      rvG.addColorStop(1, '#7a5010');
+      ctx.fillStyle = rvG;
+      ctx.beginPath(); ctx.arc(rx, o.y+11, 1.8, 0, Math.PI*2); ctx.fill();
     }
-    // ambient glow
+
+    // 4. Coil springs (3 zigzag helixes with metallic shine)
+    for(let k=0; k<3; k++){
+      const sx = o.x + 10 + k*((o.w-20)/2);
+      const compress = Math.sin(G.t*0.01 + k*0.5)*0.6;  // subtle idle bounce
+      // outer dark coil shape
+      ctx.strokeStyle = '#3a2058'; ctx.lineWidth = 3.5; ctx.lineCap='round';
+      ctx.beginPath();
+      for(let c=0; c<4; c++){
+        const cy = o.y + 8 - c*1.2 + compress*c;
+        ctx.moveTo(sx-4, cy);
+        ctx.quadraticCurveTo(sx, cy-2, sx+4, cy);
+      }
+      ctx.stroke();
+      // inner metallic coil highlight
+      ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      for(let c=0; c<4; c++){
+        const cy = o.y + 8 - c*1.2 + compress*c;
+        ctx.moveTo(sx-4, cy);
+        ctx.quadraticCurveTo(sx, cy-2, sx+4, cy);
+      }
+      ctx.stroke();
+      // top highlight (specular)
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      for(let c=0; c<4; c++){
+        const cy = o.y + 8 - c*1.2 + compress*c - 0.6;
+        ctx.moveTo(sx-3, cy);
+        ctx.quadraticCurveTo(sx, cy-1.8, sx+3, cy);
+      }
+      ctx.stroke();
+    }
+
+    // 5. Top cushion (vibrant pink with radial glossy gradient)
+    const cG = ctx.createLinearGradient(0, o.y-1, 0, o.y+9);
+    cG.addColorStop(0,    '#ffe0f0');
+    cG.addColorStop(0.3,  '#ff9ed4');
+    cG.addColorStop(0.7,  '#ff4db8');
+    cG.addColorStop(1,    '#7a1060');
+    ctx.fillStyle = cG;
+    roundRect(o.x+3, o.y-1, o.w-6, 11, 3.5); ctx.fill();
+    // cushion outline
+    ctx.strokeStyle = '#3a0828'; ctx.lineWidth = 1;
+    roundRect(o.x+3, o.y-1, o.w-6, 11, 3.5); ctx.stroke();
+
+    // 6. Cushion specular streak (top bright line)
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    roundRect(o.x+6, o.y, o.w-12, 2, 1); ctx.fill();
+    // secondary catchlight
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(cx2-o.w*0.2, o.y+1, o.w*0.1, 1, 0, 0, Math.PI*2); ctx.fill();
+
+    // 7. Energy ripples (horizontal wave lines emanating up from pad)
     ctx.save();
     ctx.globalCompositeOperation='lighter';
-    const gg = ctx.createRadialGradient(cx, cy, 4, cx, cy, o.w*0.7);
-    gg.addColorStop(0, 'rgba(200,100,255,0.35)');
-    gg.addColorStop(1, 'rgba(200,100,255,0)');
+    for(let i=0; i<3; i++){
+      const rippleY = o.y - 4 - ((G.t*0.08 + i*12) % 36);
+      const rippleAlpha = 1 - ((o.y-4-rippleY)/36);
+      ctx.strokeStyle = `rgba(255,200,240,${rippleAlpha*0.5})`;
+      ctx.lineWidth = 1;
+      const rw = o.w*0.4 + (o.y-4-rippleY)*0.6;
+      ctx.beginPath();
+      ctx.ellipse(cx2, rippleY, rw, 2, 0, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 8. Up arrows floating above (animated bob)
+    const ay = o.y - 22 + Math.sin(G.t*0.008)*4;
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#ffffff'; ctx.fillStyle = '#ffffff';
+    ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for(const dx of [-9, 9]){
+      ctx.beginPath();
+      ctx.moveTo(cx2+dx-5, ay+3);
+      ctx.lineTo(cx2+dx,   ay-3);
+      ctx.lineTo(cx2+dx+5, ay+3);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // =======================================================================
+  //  METEOR SHARDS (spikes) — Metal spikes on rusted blood-stained base
+  //  Layers: rusted base with crack details · 5 beveled metal spikes
+  //          with specular edges · tip warning glow · dried-blood stains
+  // =======================================================================
+  else if(o.kind==='spikes'){
+    ctx.save();
+
+    // 1. Base shadow
+    softShadow(cx, o.y+o.h+1, o.w*0.6, 0.5);
+
+    // 2. Rusted base (iron with blood stains)
+    const baseG = ctx.createLinearGradient(o.x, o.y+o.h-7, o.x, o.y+o.h+2);
+    baseG.addColorStop(0, '#58362a');
+    baseG.addColorStop(0.3, '#3a2018');
+    baseG.addColorStop(0.7, '#1a0808');
+    baseG.addColorStop(1, '#0a0204');
+    ctx.fillStyle = baseG;
+    roundRect(o.x-4, o.y+o.h-7, o.w+8, 9, 3); ctx.fill();
+    // dark outline
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    roundRect(o.x-4, o.y+o.h-7, o.w+8, 9, 3); ctx.stroke();
+    // top bevel (metal edge catches light)
+    ctx.strokeStyle = 'rgba(180,120,80,0.5)'; ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.moveTo(o.x-2, o.y+o.h-6); ctx.lineTo(o.x+o.w+2, o.y+o.h-6);
+    ctx.stroke();
+    // rust texture spots
+    for(let i=0; i<6; i++){
+      const rx = o.x + 4 + (i*o.w/6) + (i*37)%7;
+      const ry = o.y+o.h-4 + (i%2)*2;
+      ctx.fillStyle = `rgba(${80+i*8},${40+i*5},20,0.5)`;
+      ctx.beginPath(); ctx.arc(rx, ry, 1.2+(i%2)*0.6, 0, Math.PI*2); ctx.fill();
+    }
+    // dried blood stains (darker reddish-brown drips on front)
+    ctx.fillStyle = 'rgba(80,15,15,0.7)';
+    for(let i=0; i<3; i++){
+      const bx = o.x + 6 + i*(o.w/3.5);
+      ctx.beginPath();
+      ctx.moveTo(bx, o.y+o.h-2);
+      ctx.quadraticCurveTo(bx+1.5, o.y+o.h, bx+0.5, o.y+o.h+2);
+      ctx.quadraticCurveTo(bx-0.5, o.y+o.h+1, bx, o.y+o.h-2);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // 3. 5 metal spikes with multi-stop bevel gradient + specular
+    const n = 5;
+    for(let i=0; i<n; i++){
+      const sx = o.x + (i+0.5)*(o.w/n);
+      const h = o.h + (i%2 ? -2 : 3);
+      // spike base shadow (on mount)
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath(); ctx.ellipse(sx, o.y+h-1, 5, 1.5, 0, 0, Math.PI*2); ctx.fill();
+      // main spike body (steel gradient with rust streak)
+      const spG = ctx.createLinearGradient(sx-7, o.y+h, sx+7, o.y+h);
+      spG.addColorStop(0,    '#1a1a24');
+      spG.addColorStop(0.2,  '#4a5058');
+      spG.addColorStop(0.45, '#c8d0d8');
+      spG.addColorStop(0.65, '#707880');
+      spG.addColorStop(0.9,  '#2a2e34');
+      spG.addColorStop(1,    '#0a0a10');
+      ctx.fillStyle = spG;
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(sx-6, o.y+h);
+      ctx.lineTo(sx-1, o.y-2);
+      ctx.lineTo(sx+1, o.y-2);
+      ctx.lineTo(sx+6, o.y+h);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      // specular highlight (front-facing sharp edge)
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx-1.5, o.y+h*0.3);
+      ctx.lineTo(sx-0.2, o.y);
+      ctx.stroke();
+      // secondary thinner catchlight
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(sx+2, o.y+h*0.5);
+      ctx.lineTo(sx+0.5, o.y);
+      ctx.stroke();
+      // rust streak (darker orange running down from tip)
+      ctx.strokeStyle = 'rgba(120,50,20,0.45)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(sx-2, o.y+h*0.25);
+      ctx.quadraticCurveTo(sx-1, o.y+h*0.65, sx-2, o.y+h*0.9);
+      ctx.stroke();
+      // tip warning glow (additive red)
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      const tipPulse = 0.6 + Math.sin(G.t*0.008 + i)*0.4;
+      const tipG = ctx.createRadialGradient(sx, o.y-2, 0, sx, o.y-2, 4);
+      tipG.addColorStop(0, `rgba(255,100,80,${tipPulse*0.7})`);
+      tipG.addColorStop(1, 'rgba(255,60,40,0)');
+      ctx.fillStyle = tipG;
+      ctx.beginPath(); ctx.arc(sx, o.y-2, 4, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+
+    // 4. Ambient subtle red danger halo (dimmer than before)
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const dgPulse = 0.6 + Math.sin(G.t*0.01)*0.25;
+    const gg = ctx.createRadialGradient(cx, cy, 4, cx, cy, o.w*0.75);
+    gg.addColorStop(0, `rgba(255,80,60,${0.18*dgPulse})`);
+    gg.addColorStop(1, 'rgba(200,40,20,0)');
     ctx.fillStyle = gg;
-    ctx.beginPath(); ctx.arc(cx, cy, o.w*0.7, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, o.w*0.75, 0, Math.PI*2); ctx.fill();
     ctx.restore();
     ctx.restore();
   }
