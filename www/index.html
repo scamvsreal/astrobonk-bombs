@@ -754,6 +754,13 @@ const G = window.G = {
   // boss
   bossWarn: 0, bossActive: false, bossTimer: 0, bossSurvived: 0,
   nextBossAt: 600, bossWaveX: -200,
+  bossWaveType: 'fire',  // 'fire' | 'ice' | 'neon' | 'void' — per world theme
+  // Mini-wave (triggered by speed tier milestones — shorter than boss, less damaging)
+  miniWaveActive: false, miniWaveTimer: 0, miniWaveX: -200,
+  // Speed tier — increases every 1000m within current world (0..4)
+  speedTier: 0, nextSpeedTierAt: 1000,
+  // Distance milestone markers — every 500m subtle celebration
+  nextDistMark: 500,
 
   // persistent
   totalCoins: loadSaved('br_coins', 1240),
@@ -1515,7 +1522,11 @@ function startGame(){
   G.transition=1;
   G.tutTimer=180;
   G.bossWarn=0; G.bossActive=false; G.bossTimer=0; G.bossSurvived=0;
-  G.nextBossAt = 600;
+  G.nextBossAt = 400; // shorter gap between boss waves (was 600)
+  G.bossWaveType = 'fire';
+  G.miniWaveActive=false; G.miniWaveTimer=0; G.miniWaveX=-200;
+  G.speedTier = 0; G.nextSpeedTierAt = 1000;
+  G.nextDistMark = 500;
   G.bossWaveX = -300;
   B.x=W*0.22; B.y=GND-B.r-8; B.vy=0; B.grounded=true; B.jumps=0;
   B.jumpBuffer=0; B.coyote=0; B.jumpHeld=false;
@@ -1697,6 +1708,18 @@ function checkForNewElementTutorials(){
   }
 }
 
+// Wave type per world — different visual + tiny gameplay variant
+//   fire (default): standard damage + push
+//   ice (W2/5/8): slowmo 1s on contact (less dmg, more mobility punishment)
+//   neon (W7/10): chromatic flash on contact + screen tilt feel
+//   void (W4): brief screen darken chunks on contact
+function waveTypeForWorld(w){
+  if(w===2 || w===5 || w===8) return 'ice';
+  if(w===4) return 'void';
+  if(w===7 || w===10) return 'neon';
+  return 'fire';
+}
+
 function onWorldUp(){
   const w = WORLDS[G.world-1];
   // Apply new difficulty live
@@ -1704,6 +1727,7 @@ function onWorldUp(){
   G.maxSpeed  = w.max;
   G.accel     = w.accel;
   G.fuseDrain = w.drain * (1 - 0.03*G.upgrades.slowBurn);
+  G.bossWaveType = waveTypeForWorld(G.world);
   // Show world-up once, then unlock-specific follow-up tutorials
   showTutorial('worldup', true);
   if(G.world === UNLOCK.groundPound) showTutorial('groundPound', true);
@@ -1749,9 +1773,60 @@ function onWorldUp(){
     save('br_maxworld', G.maxWorld);
   }
 }
+// ============================================================================
+//  SPEED TIER — bumps max speed every 1000m, triggers mini-wave
+// ============================================================================
+function onSpeedTierUp(){
+  // +8% to baseSpeed and maxSpeed for remainder of this world
+  G.baseSpeed *= 1.08;
+  G.maxSpeed  *= 1.08;
+  // Visual feedback
+  G.flash = 0.6;
+  G.shake = 10;
+  G.shockwaves.push({x:W/2, y:H/2, r:10, maxR:320, life:1, color:'#ffd54a'});
+  G.shockwaves.push({x:W/2, y:H/2, r:5, maxR:220, life:1, color:'#ff8a40'});
+  // Gold particle radial burst
+  for(let k=0; k<16; k++){
+    const a = (k/16)*Math.PI*2;
+    G.particles.push({
+      x:W/2, y:H/2,
+      vx:Math.cos(a)*rand(5,9), vy:Math.sin(a)*rand(5,9),
+      life:1, max:rand(30,45),
+      color: k%2 ? '#ffd54a' : '#ff8a40',
+      size:rand(3,5), g:0.1, shape:'circle',
+    });
+  }
+  popup(W/2, H/2-30, '⚡ SPEED UP!', '#ffd54a', 2.0);
+  popup(W/2, H/2+10, 'TIER '+G.speedTier+' • +8% SPEED', '#fff', 1.1);
+  popup(W/2, H/2+40, 'WAVE INCOMING!', '#ff6030', 1.0);
+  // Ascending chord
+  sfx('power');
+  setTimeout(()=>sfx('combo'), 100);
+  setTimeout(()=>sfx('combo'), 200);
+  // Trigger mini-wave (shorter than boss, rewards survival)
+  G.miniWaveActive = true;
+  G.miniWaveTimer = 5000;
+  G.miniWaveX = B.x - 280;
+}
+
+// ============================================================================
+//  DISTANCE MARKER — subtle celebration every 500m with small gem reward
+// ============================================================================
+function onDistanceMark(){
+  const mark = G.nextDistMark - 500;
+  // Screen pulse + popup
+  G.shockwaves.push({x:W/2, y:G.bossActive?220:140, r:8, maxR:180, life:1, color:currentWorld().accent});
+  // Gem reward on every 500m
+  G.runGems += 1;
+  popup(W/2, G.bossActive?200:120, mark+'m • +1 💎', '#ff4db8', 1.1);
+  sfx('coin');
+  setTimeout(()=>sfx('gem'), 80);
+}
+
 function revive(){
-  const cost = 5;
-  if(G.totalGems < cost){ sfx('hit'); popup(W/2, H/2, 'NEED 5 GEMS', '#ff4466', 1.3); return; }
+  // Combo resurrection discount — aggressive play rewarded with cheaper revive
+  const cost = (G.bestCombo >= 15) ? 2 : 5;
+  if(G.totalGems < cost){ sfx('hit'); popup(W/2, H/2, 'NEED '+cost+' GEMS', '#ff4466', 1.3); return; }
   G.totalGems -= cost; save('br_gems', G.totalGems);
   G.state = 'play';
   G.fuse = 100;
@@ -1996,7 +2071,7 @@ function update(dt){
     if(G.bossTimer<=0){
       G.bossActive = false;
       G.bossSurvived++;
-      G.nextBossAt = Math.floor(G.distance) + 600;
+      G.nextBossAt = Math.floor(G.distance) + 400;  // was 600 — faster boss cadence
       G.runCoins += 25; G.fuse = Math.min(100, G.fuse+40);
       popup(W/2, H/2-40, 'WAVE CLEARED!', C.coinHi, 1.6);
       popup(W/2, H/2+10, '+25 COINS • +40 FUSE', '#fff', 1.0);
@@ -2264,6 +2339,53 @@ function update(dt){
   if(targetWorld > G.world){
     G.world = targetWorld;
     onWorldUp();
+    // Reset tier counters when entering new world
+    G.speedTier = 0;
+    G.nextSpeedTierAt = Math.floor(G.distance/1000)*1000 + 1000;
+  }
+
+  // ===== SPEED TIER — every 1000m inside current world, bump max speed & trigger mini-wave =====
+  if(G.distance >= G.nextSpeedTierAt && G.speedTier < 4){
+    G.speedTier++;
+    G.nextSpeedTierAt += 1000;
+    onSpeedTierUp();
+  }
+
+  // ===== 500m DISTANCE MARKER — subtle celebration + gem reward =====
+  if(G.distance >= G.nextDistMark){
+    G.nextDistMark += 500;
+    onDistanceMark();
+  }
+
+  // ===== MINI-WAVE — short fire wave that tracks player (triggered by speed tier) =====
+  if(G.miniWaveActive){
+    G.miniWaveTimer -= dt;
+    // Tracks a target ~220px behind player, closes slowly
+    const miniProg = 1 - (G.miniWaveTimer/5000);
+    const miniTarget = B.x - 240 + miniProg*120;
+    G.miniWaveX += (miniTarget - G.miniWaveX) * 0.05;
+    // Contact damage (smaller than boss)
+    if(G.miniWaveX > B.x - 25){
+      if(B.iframes<=0 && G.shield<=0 && !B.pounding){
+        G.fuse -= 10;
+        G.shake = 10;
+        G.flash = 0.5;
+        sfx('hit');
+        B.iframes = 50;
+        G.combo = 0; G.lastShockCombo = 0; G.nearMissStreak = 0;
+        G.miniWaveX = B.x - 150;
+      } else {
+        G.miniWaveX = B.x - 100;
+      }
+    }
+    if(G.miniWaveTimer <= 0){
+      G.miniWaveActive = false;
+      // Reward for surviving
+      G.runCoins += 10;
+      G.fuse = Math.min(CONFIG.FUSE.overcharge, G.fuse + 10);
+      popup(W/2, H/2, 'WAVE CLEARED! +10✨ +10 FUSE', C.coinHi, 1.4);
+      sfx('power');
+    }
   }
 
   // Spawning — uses current world's difficulty
@@ -7745,19 +7867,36 @@ function drawPopups(){
 // ============================================================================
 //  DRAW — BOSS WAVE
 // ============================================================================
+// Wave theme palettes per variant
+const WAVE_THEMES = {
+  fire: { fog:['60,0,10','180,20,30','255,60,20'], overlay:null },
+  ice:  { fog:['0,30,60','40,120,200','120,220,255'], overlay:'rgba(100,220,255,0.25)' },
+  neon: { fog:['40,0,60','180,20,220','255,40,230'], overlay:'rgba(255,40,230,0.20)' },
+  void: { fog:['10,0,20','60,20,100','120,60,180'], overlay:'rgba(30,0,40,0.45)' },
+};
+
 function drawBossWave(){
   if(!G.bossActive && G.bossWarn<=0) return;
   if(G.bossActive){
     const wx = G.bossWaveX;
+    const theme = WAVE_THEMES[G.bossWaveType || 'fire'] || WAVE_THEMES.fire;
     ctx.save();
 
-    // 1. BACK SHADOW MASS — dark red fog extending well behind the wave
+    // 1. BACK SHADOW MASS — theme-colored fog extending behind the wave
     const fogG = ctx.createLinearGradient(wx-360, 0, wx, 0);
-    fogG.addColorStop(0, 'rgba(60,0,10,0)');
-    fogG.addColorStop(0.5, 'rgba(180,20,30,0.35)');
-    fogG.addColorStop(1, 'rgba(255,60,20,0.5)');
+    fogG.addColorStop(0, `rgba(${theme.fog[0]},0)`);
+    fogG.addColorStop(0.5, `rgba(${theme.fog[1]},0.35)`);
+    fogG.addColorStop(1, `rgba(${theme.fog[2]},0.5)`);
     ctx.fillStyle = fogG;
     ctx.fillRect(wx-360, 0, 360, H);
+    // Variant color overlay across the wave (quick reskin without redrawing flame layers)
+    if(theme.overlay){
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.fillStyle = theme.overlay;
+      ctx.fillRect(wx-280, 0, 280, H);
+      ctx.restore();
+    }
 
     // 2. WALL GRADIENT — multi-stop hot core
     const wallG = ctx.createLinearGradient(wx-280, 0, wx, 0);
@@ -7916,6 +8055,51 @@ function drawBossWave(){
     ctx.fillText('Dodge obstacles to stay ahead!', W/2, H*0.35+26);
     ctx.restore();
   }
+}
+
+// Mini-wave: short, less menacing version of boss wave (triggered by speed tier)
+function drawMiniWave(){
+  if(!G.miniWaveActive) return;
+  const wx = G.miniWaveX;
+  ctx.save();
+  // Simpler gradient (no demonic faces, narrower range)
+  const wallG = ctx.createLinearGradient(wx-160, 0, wx, 0);
+  wallG.addColorStop(0,    'rgba(255,80,20,0)');
+  wallG.addColorStop(0.5,  'rgba(255,100,40,0.55)');
+  wallG.addColorStop(0.85, 'rgba(255,180,60,0.85)');
+  wallG.addColorStop(1,    'rgba(255,240,180,1)');
+  ctx.fillStyle = wallG;
+  ctx.fillRect(wx-160, 0, 160, H);
+  // Flame edge (single layer procedural noise)
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.fillStyle = 'rgba(255,150,40,0.6)';
+  ctx.beginPath();
+  ctx.moveTo(wx+30, 0);
+  for(let y=0; y<=H; y+=20){
+    const n = Math.sin(G.t*0.016 + y*0.04)*14;
+    ctx.lineTo(wx + n, y);
+  }
+  ctx.lineTo(wx+30, H);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // Embers (sparse, fewer than boss)
+  if(G.frame%4===0 && G.particles.length < PARTICLE_CAP - 10){
+    G.particles.push({
+      x: wx+rand(-20,10), y: rand(0,H),
+      vx: rand(1,3), vy: rand(-2,0),
+      life:1, max:rand(22,38), color: C.fireHi,
+      size:rand(2,4), g:0.04, shape:'circle',
+    });
+  }
+  // Edge vignette (just fringes, lighter than boss)
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.fillStyle = 'rgba(255,80,40,0.08)';
+  ctx.fillRect(0, 0, 30, H);
+  ctx.fillRect(W-30, 0, 30, H);
+  ctx.restore();
+  ctx.restore();
 }
 
 // ============================================================================
@@ -8883,8 +9067,9 @@ function drawGameOver(){
     ctx.fillText(ach, px+36, aY+4);
   }
 
-  // CONTINUE button (primary) — costs 5 gems, keeps progress
-  const canRevive = G.totalGems >= 5;
+  // CONTINUE button — 2 gems discount if bestCombo >= 15 (combo resurrection)
+  const reviveCost = (G.bestCombo >= 15) ? 2 : 5;
+  const canRevive = G.totalGems >= reviveCost;
   const rbx = W/2-130, rby=H-210, rbw=260, rbh=60;
   ctx.save();
   const rp = 1 + Math.sin(G.t*0.006)*0.03;
@@ -8915,8 +9100,16 @@ function drawGameOver(){
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = canRevive ? '#3a2000' : '#888';
   ctx.font='bold 20px Chakra Petch';
-  ctx.fillText('5', 76, 1);
+  ctx.fillText(String(reviveCost), 76, 1);
   ctx.restore();
+  // Combo-resurrection notice when discount applies
+  if(reviveCost === 2){
+    ctx.save();
+    ctx.fillStyle = '#ff4db8';
+    ctx.font = 'bold 11px Chakra Petch'; ctx.textAlign = 'center';
+    ctx.fillText('⚡ COMBO RESURRECT — HALF PRICE!', W/2, rby-6);
+    ctx.restore();
+  }
   addButton('revive', rbx, rby, rbw, rbh);
 
   // Single HOME button (back to menu — next game starts from W1)
@@ -9201,6 +9394,7 @@ function render(){
   drawParticles();
   drawForegroundDebris();
   drawBossWave();
+  drawMiniWave();
   drawPopups();
   drawHUD();
   drawScanlines();
