@@ -1305,8 +1305,8 @@ function startGame(){
   G.speed = w.base;
   G.combo=0; G.comboTime=0; G.bestCombo=0;
   G.runCoins=0; G.runGems=0;
-  G.fuse = Math.min(100, 100 + G.upgrades.startFuse*5); // can start >100 visually, capped at 100
-  G.fuse = 100 + G.upgrades.startFuse*5;                  // allow overcharge bar
+  // Start with 100 fuse + overcharge bonus from startFuse upgrade (up to +25 at lvl 5)
+  G.fuse = 100 + G.upgrades.startFuse*5;
   G.shake=0; G.flash=0;
   G.shield=0; G.shieldMax=0; G.shieldImpact=0; G.magnet=0; G.dbl=0; G.rocket=0; G.slowmo=0; G.smash=0;
   G.obstacles=[]; G.collects=[]; G.particles=[]; G.popups=[]; G.embers=[]; G.enemies=[]; G.shockwaves=[];
@@ -1555,6 +1555,14 @@ function revive(){
   B.vy = 0;
   B.grounded = true;
   B.iframes = 180; // 3s invincibility
+  // Reset transient per-run state (prevents stale combo/fever/rage from death frame)
+  G.combo = 0; G.comboTime = 0;
+  G.lastShockCombo = 0;
+  G.nearMissStreak = 0;
+  G.rage = false;
+  G.feverActive = false;
+  G.feverTimer = 0;
+  B.stompChain = 0; B.pounding = false; B.smashFromItem = false;
   G.shake = 14; G.flash = 1;
   // Clear immediate threats near player
   G.obstacles = G.obstacles.filter(o => o.x > B.x + 200 || o.x < B.x - 100);
@@ -1735,6 +1743,8 @@ function update(dt){
       if(B.iframes<=0 && G.shield<=0 && !B.pounding){
         G.fuse -= 18; G.shake=14; G.flash=0.7; sfx('hit');
         B.iframes = 60;
+        // Break combo/streak on boss wave contact (was missing)
+        G.combo = 0; G.lastShockCombo = 0; G.nearMissStreak = 0;
         G.bossWaveX = B.x - 180; // big push back
       } else {
         G.bossWaveX = B.x - 120;
@@ -1752,10 +1762,9 @@ function update(dt){
     }
   }
 
-  // Fuse drain
+  // Fuse drain — rocket power skips drain, boss 1.5× multiplier
   G.fuse -= G.fuseDrain * (G.rocket>0 ? 0 : 1) * (G.bossActive?1.5:1);
-  if(G.fuse > 100 && !G.rocket && G.shield<=0 && G.fuse>100) { /* allow overcharge */ }
-  if(G.fuse > 120) G.fuse = 120;
+  if(G.fuse > 120) G.fuse = 120; // overcharge cap
   if(G.fuse < 25 && !G.rage){ G.rage=true; }
   if(G.fuse > 30 && G.rage){ G.rage=false; }
   if(G.fuse <= 0){ G.fuse=0; if(B.alive){ B.alive=false; explode(); endGame(); } }
