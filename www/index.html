@@ -109,6 +109,59 @@ function applyBloom(){
   }
 }
 
+// Chromatic aberration — subtle colored vignette for cinematic edge feel
+function applyChromatic(){
+  try {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const vg = ctx.createRadialGradient(W/2, H/2, W*0.32, W/2, H/2, W*0.78);
+    vg.addColorStop(0, 'rgba(255,60,180,0)');
+    vg.addColorStop(1, 'rgba(255,40,160,0.09)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+    const vg2 = ctx.createRadialGradient(W/2, H/2, W*0.32, W/2, H/2, W*0.78);
+    vg2.addColorStop(0, 'rgba(60,160,255,0)');
+    vg2.addColorStop(1, 'rgba(40,140,255,0.07)');
+    ctx.fillStyle = vg2;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  } catch(e){}
+}
+
+// Film grain — pre-generated noise texture tiled with random offset per frame
+let grainTex = null;
+function ensureGrainTex(){
+  if(grainTex) return grainTex;
+  const gc = document.createElement('canvas');
+  gc.width = 128; gc.height = 128;
+  const gctx = gc.getContext('2d');
+  const img = gctx.createImageData(128, 128);
+  for(let i=0;i<img.data.length;i+=4){
+    const v = (Math.random()*255)|0;
+    img.data[i] = v; img.data[i+1] = v; img.data[i+2] = v;
+    img.data[i+3] = 255;
+  }
+  gctx.putImageData(img, 0, 0);
+  grainTex = gc;
+  return gc;
+}
+function applyFilmGrain(){
+  try {
+    const tex = ensureGrainTex();
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = 0.055;
+    const ox = -Math.floor(Math.random()*128);
+    const oy = -Math.floor(Math.random()*128);
+    for(let y=oy; y<H; y+=128){
+      for(let x=ox; x<W; x+=128){
+        ctx.drawImage(tex, x, y);
+      }
+    }
+    ctx.restore();
+  } catch(e){}
+}
+
 // ============================================================================
 //  AUDIO
 // ============================================================================
@@ -540,8 +593,15 @@ const B = {
 // ============================================================================
 //  BACKGROUND INIT
 // ============================================================================
-for(let i=0;i<60;i++){
-  G.bgStars.push({x:Math.random()*W,y:Math.random()*H*0.7,s:Math.random()*1.8+0.3,tw:Math.random()*6.28});
+// 3-layer parallax starfield — depth illusion
+for(let i=0;i<40;i++){ // far (slow, small)
+  G.bgStars.push({px:Math.random()*W,y:Math.random()*H*0.7,s:Math.random()*1.0+0.2,tw:Math.random()*6.28,layer:0});
+}
+for(let i=0;i<25;i++){ // mid
+  G.bgStars.push({px:Math.random()*W,y:Math.random()*H*0.7,s:Math.random()*1.5+0.5,tw:Math.random()*6.28,layer:1});
+}
+for(let i=0;i<15;i++){ // near (fast, big)
+  G.bgStars.push({px:Math.random()*W,y:Math.random()*H*0.65,s:Math.random()*2.2+0.9,tw:Math.random()*6.28,layer:2});
 }
 for(let i=0;i<6;i++){
   G.bgClouds.push({x:Math.random()*W,y:80+Math.random()*200,s:0.3+Math.random()*0.6,w:150+Math.random()*180});
@@ -3722,17 +3782,21 @@ function drawBackground(){
     ctx.restore();
   }
 
-  // --- STARS with cross-sparkle ---
+  // --- 3-LAYER PARALLAX STARFIELD with depth tinting ---
   for(const s of G.bgStars){
+    const layer = s.layer || 0;
+    const speed = layer === 0 ? 0.04 : layer === 1 ? 0.08 : 0.15;
+    const sx = ((s.px - G.distance*speed) % W + W) % W;
     const a = 0.3 + Math.sin(s.tw)*0.3 + 0.4;
-    ctx.fillStyle = `rgba(255,255,255,${a})`;
-    ctx.beginPath(); ctx.arc(s.x, s.y, s.s, 0, Math.PI*2); ctx.fill();
+    const tint = layer === 2 ? '255,240,220' : layer === 1 ? '230,235,255' : '200,210,255';
+    ctx.fillStyle = `rgba(${tint},${a})`;
+    ctx.beginPath(); ctx.arc(sx, s.y, s.s, 0, Math.PI*2); ctx.fill();
     if(s.s > 1.3){
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.5})`;
+      ctx.strokeStyle = `rgba(${tint},${a*0.5})`;
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(s.x - s.s*3.2, s.y); ctx.lineTo(s.x + s.s*3.2, s.y);
-      ctx.moveTo(s.x, s.y - s.s*3.2); ctx.lineTo(s.x, s.y + s.s*3.2);
+      ctx.moveTo(sx - s.s*3.2, s.y); ctx.lineTo(sx + s.s*3.2, s.y);
+      ctx.moveTo(sx, s.y - s.s*3.2); ctx.lineTo(sx, s.y + s.s*3.2);
       ctx.stroke();
     }
   }
@@ -3764,6 +3828,22 @@ function drawBackground(){
     ctx.save();
     const px = W*0.78 + Math.sin(G.t*0.00008)*4;
     const py = H*0.16;
+    // GOD RAYS radiating outward — cinematic volumetric light
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#ff80c8';
+    ctx.lineCap = 'round';
+    for(let i=0;i<14;i++){
+      const a = (i/14)*Math.PI*2 + G.t*0.0002;
+      const rayLen = 160 + Math.sin(G.t*0.0004+i*0.7)*40;
+      ctx.lineWidth = 2 + Math.sin(G.t*0.0018+i*1.2)*1.5;
+      ctx.beginPath();
+      ctx.moveTo(px + Math.cos(a)*42, py + Math.sin(a)*42);
+      ctx.lineTo(px + Math.cos(a)*rayLen, py + Math.sin(a)*rayLen);
+      ctx.stroke();
+    }
+    ctx.restore();
     // outer glow
     ctx.save();
     ctx.globalCompositeOperation='lighter';
@@ -5561,8 +5641,12 @@ function render(){
     ctx.fillStyle = `rgba(255,255,255,${1-G.transition})`;
     ctx.fillRect(0,0,W,H);
   }
-  // BLOOM pass — applied before overlays so UI stays crisp
-  if(G.state==='play' && !G.tutModal) applyBloom();
+  // POST-PROCESSING STACK — bloom + chromatic + film grain before UI
+  if(G.state==='play' && !G.tutModal){
+    applyBloom();
+    applyChromatic();
+    applyFilmGrain();
+  }
   // Countdown overlay (drawn below tutorial if both active)
   if(G.state==='play' && G.countdown > 0){
     drawCountdown();
